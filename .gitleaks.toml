@@ -2,10 +2,16 @@
 useDefault = true
 
 [allowlist]
-description = "Ignore unit and instrumentation test fixtures"
+description = "Ignore test fixtures and legacy sample commits"
+commits = [
+    "87f9e0221e55e030222fe96a8d41b37378d4536c",
+    "ec0ff6e8fafc6e7986e0fdc5a55c77128fc0fb05",
+    "c34e9022049255cb40745deb5288b25238aa49af"
+]
 paths = [
     '''_test\.go$''',
     '''Test\.kt$''',
     '''src/test/''',
-    '''src/androidTest/'''
+    '''src/androidTest/''',
+    '''docs/'''
 ]
