@@ -1,6 +1,6 @@
-# olcRTC Client
+# olcrtc-forge
 
-Android VPN client for olcRTC and standard proxy profiles. The app is designed for Android 8+ and routes traffic through Android VpnService, HevSocks5Tunnel, Xray, and optionally the olcRTC mobile core.
+Android VPN client for olcRTC and standard proxy profiles (fork with v3 handshake support). The app is designed for Android 8+ and routes traffic through Android VpnService, HevSocks5Tunnel, Xray, and optionally the olcRTC mobile core.
 
 ## Scope
 

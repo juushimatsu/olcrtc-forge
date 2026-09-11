@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.5.1 — 2026-09-11
+
+- Rebrand: rebranded to `olcrtc-forge` with refreshed branding, new app icons, and repository links.
+- Protocol & Handshake: added compatibility with new v3 handshake (ProtoVersion 3, 128-bit challenge nonce, authenticated routing peer ID) matching olcrtc master, with automatic fallback for legacy v1 servers.
+- Core: embedded self-contained native core with full control over handshake and transports.
+
 ## 1.5.0 — 2026-09-09
 
 - Tunnel & Web Surfing: restore tunnel MTU to 1500 to match Android VpnService MTU, completely resolving issues with stalled websites or timeouts on packets > 1400 bytes (TLS 1.3 ClientHello with post-quantum ML-KEM/Kyber keys in Chrome, large HTTP payloads).

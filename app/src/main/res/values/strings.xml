@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">olcRTC Client</string>
+    <string name="app_name">olcrtc-forge</string>
     <string name="navigation_connection">VPN</string>
     <string name="navigation_profiles">Subscriptions</string>
     <string name="navigation_statistics">Traffic</string>
@@ -250,10 +250,10 @@
     <string name="settings_update_no_asset">Release found, but no compatible APK asset is available</string>
     <string name="settings_system_screen_unavailable">System settings screen is unavailable on this device</string>
     <string name="battery_optimization_prompt_title">Improve background VPN stability</string>
-    <string name="battery_optimization_prompt_message">Android may suspend the VPN when the screen is off. Disable battery optimization for olcRTC Client for more reliable background operation and reconnects.</string>
+    <string name="battery_optimization_prompt_message">Android may suspend the VPN when the screen is off. Disable battery optimization for olcrtc-forge for more reliable background operation and reconnects.</string>
     <string name="battery_optimization_prompt_never">Do not show again</string>
     <string name="battery_optimization_prompt_open">Open app settings</string>
-    <string name="battery_optimization_already_disabled">Battery optimization is already disabled for olcRTC Client</string>
+    <string name="battery_optimization_already_disabled">Battery optimization is already disabled for olcrtc-forge</string>
     <string name="settings_about_message">Version: %1$s\nDeveloper: %2$s</string>
     <string name="settings_about_repository">Original repository on GitHub</string>
     <string name="settings_about_telegram">Developer Telegram</string>

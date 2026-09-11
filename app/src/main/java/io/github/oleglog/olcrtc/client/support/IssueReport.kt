@@ -37,5 +37,5 @@ internal object IssueReportBuilder {
         .encode(value, StandardCharsets.UTF_8.name())
         .replace("+", "%20")
 
-    private const val ISSUE_URL = "https://github.com/Oleglog/Olcrtc_client/issues/new"
+    private const val ISSUE_URL = "https://github.com/juushimatsu/olcrtc-forge/issues/new"
 }

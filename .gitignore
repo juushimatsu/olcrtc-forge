@@ -20,6 +20,7 @@ __pycache__/
 .gitnexus/
 
 ## local
+temp/
 olcrtc-client-core-upgrade.md
 temp-files/
 .claude/

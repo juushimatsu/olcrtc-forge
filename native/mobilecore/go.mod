@@ -123,9 +123,6 @@ require (
 // CI's `go mod tidy` regenerates go.sum; bump the pseudo-version on re-cherry-pick.
 replace github.com/zarazaex69/j => github.com/Oleglog/j v0.0.0-20260813164759-98b35e399132
 
-// Tunnel core comes from the Oleglog/Olcrtc_manager fork (UDP ASSOCIATE
-// relay, eager vp8 writer, carrier/transport matrix). Same module path, so
-// this is a replace — not a second require. The fork-only commits do not
-// exist upstream, so the openlibrecommunity pseudo-version above would not
-// resolve without it. CI's `go mod tidy` keeps go.sum for the replacement.
-replace github.com/openlibrecommunity/olcrtc => github.com/Oleglog/Olcrtc_manager v0.0.0-20260909104030-c267dd30b0bc
+// Tunnel core comes from native/olcrtc with v3 handshake compatibility,
+// UDP ASSOCIATE relay, eager vp8 writer, and carrier/transport matrix.
+replace github.com/openlibrecommunity/olcrtc => ../olcrtc

@@ -424,7 +424,10 @@ func dependencyVersion(path string) string {
 	for _, dep := range info.Deps {
 		if dep.Path == path {
 			if dep.Replace != nil {
-				return dep.Replace.Version
+				if dep.Replace.Version != "" {
+					return dep.Replace.Version
+				}
+				return dep.Replace.Path
 			}
 			return dep.Version
 		}

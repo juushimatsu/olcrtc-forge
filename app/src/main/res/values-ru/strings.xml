@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">olcRTC Client</string>
+    <string name="app_name">olcrtc-forge</string>
     <string name="navigation_connection">VPN</string>
     <string name="navigation_profiles">Подписки</string>
     <string name="navigation_statistics">Трафик</string>
@@ -251,10 +251,10 @@
     <string name="settings_update_no_asset">Релиз найден, но совместимого APK-файла нет</string>
     <string name="settings_system_screen_unavailable">Эти системные настройки недоступны на устройстве</string>
     <string name="battery_optimization_prompt_title">Повысить стабильность VPN в фоне</string>
-    <string name="battery_optimization_prompt_message">Android может приостанавливать VPN при выключенном экране. Отключите экономию заряда для olcRTC Client, чтобы фоновая работа и переподключения были надёжнее.</string>
+    <string name="battery_optimization_prompt_message">Android может приостанавливать VPN при выключенном экране. Отключите экономию заряда для olcrtc-forge, чтобы фоновая работа и переподключения были надёжнее.</string>
     <string name="battery_optimization_prompt_never">Больше не показывать</string>
     <string name="battery_optimization_prompt_open">Открыть настройки</string>
-    <string name="battery_optimization_already_disabled">Экономия заряда уже отключена для olcRTC Client</string>
+    <string name="battery_optimization_already_disabled">Экономия заряда уже отключена для olcrtc-forge</string>
     <string name="settings_about_message">Версия: %1$s\nРазработчик: %2$s</string>
     <string name="settings_about_repository">Оригинальный репозиторий на GitHub</string>
     <string name="settings_about_telegram">Telegram разработчика</string>

@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OlcrtcClient"
+rootProject.name = "olcrtc-forge"
 include(":app")

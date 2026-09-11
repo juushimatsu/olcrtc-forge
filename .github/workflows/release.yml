@@ -30,7 +30,7 @@ jobs:
           path: |
             ~/go/bin/gomobile
             app/libs/mobilecore.aar
-          key: mobilecore-${{ runner.os }}-android-all-${{ hashFiles('scripts/build_mobilecore.sh', 'native/mobilecore/go.mod', 'native/mobilecore/go.sum', 'native/mobilecore/**/*.go') }}
+          key: mobilecore-${{ runner.os }}-android-all-${{ hashFiles('scripts/build_mobilecore.sh', 'native/mobilecore/go.mod', 'native/mobilecore/go.sum', 'native/mobilecore/**/*.go', 'native/olcrtc/go.mod', 'native/olcrtc/go.sum', 'native/olcrtc/**/*.go') }}
 
       - uses: actions/setup-java@v4
         with:
@@ -140,9 +140,9 @@ jobs:
           set -euo pipefail
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           mkdir -p release-artifacts
-          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "release-artifacts/olcRTC-Client-${TAG}-arm64-v8a.apk"
-          cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "release-artifacts/olcRTC-Client-${TAG}-armeabi-v7a.apk"
-          cp app/build/outputs/apk/release/app-universal-release.apk "release-artifacts/olcRTC-Client-${TAG}-universal.apk"
+          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "release-artifacts/olcrtc-forge-${TAG}-arm64-v8a.apk"
+          cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "release-artifacts/olcrtc-forge-${TAG}-armeabi-v7a.apk"
+          cp app/build/outputs/apk/release/app-universal-release.apk "release-artifacts/olcrtc-forge-${TAG}-universal.apk"
           (cd release-artifacts && sha256sum *.apk > SHA256SUMS.txt)
           # Append signing certificate SHA-256 to checksums file
           if [ -f release-artifacts/SIGNING_CERT_SHA256.txt ]; then
@@ -154,7 +154,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: olcrtc-client-release-apk
+          name: olcrtc-forge-release-apk
           path: release-artifacts/*
           if-no-files-found: error
 
@@ -162,18 +162,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: olcRTC Client ${{ github.event.inputs.tag || github.ref_name }}
+          name: olcrtc-forge ${{ github.event.inputs.tag || github.ref_name }}
           files: release-artifacts/*
           generate_release_notes: true
-          draft: true
+          draft: false
 
-      - name: Keep latest fifteen GitHub Releases
+      - name: Keep latest five GitHub Releases
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            --jq 'map(select(.draft == false)) | sort_by(.published_at) | reverse | .[15:][]?.id' |
+            --jq 'map(select(.draft == false)) | sort_by(.published_at) | reverse | .[5:][]?.id' |
           while read -r release_id; do
             gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
           done
