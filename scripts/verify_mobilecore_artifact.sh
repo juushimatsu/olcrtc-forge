@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly AAR="${1:-$ROOT/app/libs/mobilecore.aar}"
-readonly EXPECTED_OLCRTC_REPLACE="../olcrtc"
+readonly EXPECTED_OLCRTC_REPLACE="native/olcrtc"
 readonly EXPECTED_J_VERSION="v0.0.0-20260813164759-98b35e399132"
 readonly -a REQUIRED_LIBRARIES=(
   "jni/arm64-v8a/libgojni.so"
@@ -46,11 +46,11 @@ for library in "${libraries[@]}"; do
       "$abi" >&2
     exit 1
   fi
-  if ! awk -v path="$EXPECTED_OLCRTC_REPLACE" \
-    '$1 == "=>" && $2 == path { found = 1 } END { exit !found }' \
+  if ! awk \
+    '$1 == "=>" && $2 ~ /native\/olcrtc$/ { found = 1 } END { exit !found }' \
     "$metadata"; then
-    printf 'mobilecore %s does not resolve olcRTC to %s\n' \
-      "$abi" "$EXPECTED_OLCRTC_REPLACE" >&2
+    printf 'mobilecore %s does not resolve olcRTC to native/olcrtc\n' \
+      "$abi" >&2
     exit 1
   fi
   if ! awk -v expected="$EXPECTED_J_VERSION" \
