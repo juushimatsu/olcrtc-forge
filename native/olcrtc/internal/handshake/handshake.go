@@ -15,8 +15,6 @@
 // After the exchange the control stream stays open; tunnel traffic flows over
 // additional smux streams opened by the client. The control stream then
 // carries ping/pong liveness and future control messages.
-//
-//nolint:tagliatelle // JSON keys are the stable wire protocol schema.
 package handshake
 
 import (
@@ -26,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/framing"
@@ -35,9 +32,6 @@ import (
 // ProtoVersion identifies the wire-format version. Bumped only on breaking
 // changes to message layout or semantics.
 const ProtoVersion = 3
-
-// LegacyProtoVersion identifies the v1 wire-format version for fallback.
-const LegacyProtoVersion = 1
 
 // challengeSize gives every handshake a fresh 128-bit identity. The server
 // echoes it in every reply so a valid encrypted reply captured for one client
@@ -70,7 +64,7 @@ type Hello struct {
 	Version   int            `json:"version"`
 	Type      MsgType        `json:"type"`
 	DeviceID  string         `json:"device_id"`
-	Challenge string         `json:"challenge,omitempty"`
+	Challenge string         `json:"challenge"`
 	Claims    map[string]any `json:"claims,omitempty"`
 }
 
@@ -80,7 +74,7 @@ type Welcome struct {
 	Type      MsgType `json:"type"`
 	SessionID string  `json:"session_id"`
 	PeerID    string  `json:"peer_id,omitempty"`
-	Challenge string  `json:"challenge,omitempty"`
+	Challenge string  `json:"challenge"`
 }
 
 // Reject is the server's response when auth fails.
@@ -115,29 +109,24 @@ type AuthFunc func(deviceID string, claims map[string]any) (sessionID string, er
 
 // Client performs the client side of the handshake on rw and returns the
 // session ID and authenticated routing peer ID assigned by the server.
-// It initiates handshake with ProtoVersion 3 (v3) as in olcrtc-master,
-// and gracefully falls back to v1 if the remote server indicates protocol mismatch.
 func Client(rw io.ReadWriter, deviceID string, claims map[string]any) (string, string, error) {
 	challenge, err := newChallenge()
 	if err != nil {
 		return "", "", err
 	}
-	helloV3 := Hello{
+	hello := Hello{
 		Version:   ProtoVersion,
 		Type:      TypeHello,
 		DeviceID:  deviceID,
 		Challenge: challenge,
 		Claims:    claims,
 	}
-	if err := writeFrame(rw, helloV3); err != nil {
+	if err := writeFrame(rw, hello); err != nil {
 		return "", "", fmt.Errorf("send hello: %w", err)
 	}
 
 	for {
-		sessionID, peerID, matched, replyErr, needV1Fallback := readReply(rw, challenge)
-		if needV1Fallback {
-			return clientV1Fallback(rw, deviceID, claims)
-		}
+		sessionID, peerID, matched, replyErr := readReply(rw, challenge)
 		if !matched {
 			continue
 		}
@@ -146,89 +135,33 @@ func Client(rw io.ReadWriter, deviceID string, claims map[string]any) (string, s
 	}
 }
 
-func clientV1Fallback(rw io.ReadWriter, deviceID string, claims map[string]any) (string, string, error) {
-	helloV1 := Hello{
-		Version:  LegacyProtoVersion,
-		Type:     TypeHello,
-		DeviceID: deviceID,
-		Claims:   claims,
-	}
-	if err := writeFrame(rw, helloV1); err != nil {
-		return "", "", fmt.Errorf("send legacy hello: %w", err)
-	}
-
+func readReply(rw io.Reader, challenge string) (string, string, bool, error) {
 	raw, err := readFrame(rw)
 	if err != nil {
-		return "", "", fmt.Errorf("read legacy welcome: %w", err)
+		return "", "", true, fmt.Errorf("read welcome: %w", err)
 	}
 
 	var probe struct {
-		Type    MsgType `json:"type"`
-		Version int     `json:"version"`
-		Reason  string  `json:"reason"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return "", "", fmt.Errorf("parse legacy reply: %w", err)
-	}
-
-	switch probe.Type {
-	case TypeWelcome:
-		var w Welcome
-		if err := json.Unmarshal(raw, &w); err != nil {
-			return "", "", fmt.Errorf("parse legacy welcome: %w", err)
-		}
-		return w.SessionID, w.PeerID, nil
-	case TypeReject:
-		return "", "", fmt.Errorf("%w: %s", ErrRejected, probe.Reason)
-	default:
-		return "", "", fmt.Errorf("%w: got %q", ErrUnexpectedMessage, probe.Type)
-	}
-}
-
-func readReply(rw io.Reader, challenge string) (string, string, bool, error, bool) {
-	raw, err := readFrame(rw)
-	if err != nil {
-		return "", "", true, fmt.Errorf("read welcome: %w", err), false
-	}
-
-	var probe struct {
-		Version   int     `json:"version"`
 		Type      MsgType `json:"type"`
 		Challenge string  `json:"challenge"`
-		Reason    string  `json:"reason"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return "", "", true, fmt.Errorf("parse reply: %w", err), false
+		return "", "", true, fmt.Errorf("parse reply: %w", err)
 	}
-
-	// If server rejects due to protocol version mismatch or reports v1, trigger v1 fallback
-	if probe.Type == TypeReject && (probe.Version == LegacyProtoVersion || strings.Contains(strings.ToLower(probe.Reason), "protocol version")) {
-		return "", "", true, nil, true
-	}
-
-	// Legacy server directly replying with Welcome v1
-	if probe.Type == TypeWelcome && probe.Version == LegacyProtoVersion {
-		var w Welcome
-		if err := json.Unmarshal(raw, &w); err != nil {
-			return "", "", true, fmt.Errorf("parse welcome: %w", err), false
-		}
-		return w.SessionID, w.PeerID, true, nil, false
-	}
-
 	if probe.Challenge != challenge {
-		return "", "", false, nil, false
+		return "", "", false, nil
 	}
 
 	switch probe.Type {
 	case TypeWelcome:
 		sessionID, peerID, parseErr := parseWelcome(raw, challenge)
-		return sessionID, peerID, true, parseErr, false
+		return sessionID, peerID, true, parseErr
 	case TypeReject:
-		return "", "", true, parseReject(raw, challenge), false
+		return "", "", true, parseReject(raw, challenge)
 	case TypeHello:
-		return "", "", true, fmt.Errorf("%w: got %q", ErrUnexpectedMessage, probe.Type), false
+		return "", "", true, fmt.Errorf("%w: got %q", ErrUnexpectedMessage, probe.Type)
 	default:
-		return "", "", true, fmt.Errorf("%w: got %q", ErrUnexpectedMessage, probe.Type), false
+		return "", "", true, fmt.Errorf("%w: got %q", ErrUnexpectedMessage, probe.Type)
 	}
 }
 
@@ -237,11 +170,11 @@ func parseWelcome(raw []byte, challenge string) (string, string, error) {
 	if err := json.Unmarshal(raw, &w); err != nil {
 		return "", "", fmt.Errorf("parse welcome: %w", err)
 	}
-	if w.Version != ProtoVersion && w.Version != LegacyProtoVersion {
+	if w.Version != ProtoVersion {
 		return "", "", fmt.Errorf("%w: server v%d, client v%d",
 			ErrProtocolVersion, w.Version, ProtoVersion)
 	}
-	if w.Challenge != "" && w.Challenge != challenge {
+	if w.Challenge != challenge {
 		return "", "", ErrChallengeMismatch
 	}
 	return w.SessionID, w.PeerID, nil
@@ -252,7 +185,7 @@ func parseReject(raw []byte, challenge string) error {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return fmt.Errorf("parse reject: %w", err)
 	}
-	if r.Challenge != "" && r.Challenge != challenge {
+	if r.Challenge != challenge {
 		return ErrChallengeMismatch
 	}
 	return fmt.Errorf("%w: %s", ErrRejected, r.Reason)
@@ -270,13 +203,11 @@ func newChallenge() (string, error) {
 // Server performs the server side of the handshake. It reads CLIENT_HELLO,
 // invokes auth, and writes the corresponding WELCOME or REJECT. On success it
 // returns the parsed Hello and the session ID produced by auth.
-// Supports both v3 clients (with challenge and optional peerID) and legacy v1 clients.
 func Server(rw io.ReadWriter, auth AuthFunc, peerIDs ...string) (Hello, string, error) {
 	peerID := ""
 	if len(peerIDs) > 0 {
 		peerID = peerIDs[0]
 	}
-
 	raw, err := readFrame(rw)
 	if err != nil {
 		return Hello{}, "", fmt.Errorf("read hello: %w", err)
@@ -291,7 +222,7 @@ func Server(rw io.ReadWriter, auth AuthFunc, peerIDs ...string) (Hello, string, 
 		_ = writeFrame(rw, Reject{Version: ProtoVersion, Type: TypeReject, Reason: "expected CLIENT_HELLO"})
 		return h, "", fmt.Errorf("%w: got %q", ErrUnexpectedMessage, h.Type)
 	}
-	if h.Version != ProtoVersion && h.Version != LegacyProtoVersion {
+	if h.Version != ProtoVersion {
 		_ = writeFrame(rw, Reject{
 			Version: ProtoVersion, Type: TypeReject,
 			Reason: "protocol version mismatch", Challenge: h.Challenge,
@@ -299,7 +230,7 @@ func Server(rw io.ReadWriter, auth AuthFunc, peerIDs ...string) (Hello, string, 
 		return h, "", fmt.Errorf("%w: client v%d, server v%d",
 			ErrProtocolVersion, h.Version, ProtoVersion)
 	}
-	if h.Version == ProtoVersion && !validChallenge(h.Challenge) {
+	if !validChallenge(h.Challenge) {
 		_ = writeFrame(rw, Reject{
 			Version: ProtoVersion, Type: TypeReject,
 			Reason: "invalid handshake challenge", Challenge: h.Challenge,
@@ -310,22 +241,19 @@ func Server(rw io.ReadWriter, auth AuthFunc, peerIDs ...string) (Hello, string, 
 	sessionID, err := auth(h.DeviceID, h.Claims)
 	if err != nil {
 		_ = writeFrame(rw, Reject{
-			Version: h.Version, Type: TypeReject,
+			Version: ProtoVersion, Type: TypeReject,
 			Reason: err.Error(), Challenge: h.Challenge,
 		})
 		return h, "", fmt.Errorf("auth: %w", err)
 	}
 
-	welcome := Welcome{
-		Version:   h.Version,
+	if err := writeFrame(rw, Welcome{
+		Version:   ProtoVersion,
 		Type:      TypeWelcome,
 		SessionID: sessionID,
+		PeerID:    peerID,
 		Challenge: h.Challenge,
-	}
-	if h.Version == ProtoVersion {
-		welcome.PeerID = peerID
-	}
-	if err := writeFrame(rw, welcome); err != nil {
+	}); err != nil {
 		return h, sessionID, fmt.Errorf("send welcome: %w", err)
 	}
 	return h, sessionID, nil

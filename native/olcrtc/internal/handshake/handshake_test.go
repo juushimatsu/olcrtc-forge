@@ -95,59 +95,16 @@ func TestReplyMustMatchClientChallenge(t *testing.T) {
 		t.Fatalf("write matching welcome: %v", err)
 	}
 
-	if _, _, matched, err, _ := readReply(&replies, challengeB); err != nil || matched {
+	if _, _, matched, err := readReply(&replies, challengeB); err != nil || matched {
 		t.Fatalf("replayed reply = matched %v, err %v; want ignored", matched, err)
 	}
 
-	sessionID, peerID, matched, err, _ := readReply(&replies, challengeB)
+	sessionID, peerID, matched, err := readReply(&replies, challengeB)
 	if err != nil || !matched {
 		t.Fatalf("matching reply = matched %v, err %v", matched, err)
 	}
 	if sessionID != "session-b" || peerID != "peer-b" {
 		t.Fatalf("matching reply = session %q peer %q", sessionID, peerID)
-	}
-}
-
-func TestHandshakeV1Fallback(t *testing.T) {
-	cConn, sConn := pair(t)
-
-	// Simulate legacy v1 server
-	go func() {
-		raw, err := readFrame(sConn)
-		if err != nil {
-			t.Errorf("readFrame: %v", err)
-			return
-		}
-		// First frame is v3 hello from client
-		var h Hello
-		_ = writeFrame(sConn, Reject{
-			Version: LegacyProtoVersion,
-			Type:    TypeReject,
-			Reason:  "protocol version mismatch",
-		})
-
-		// Second frame should be v1 hello fallback from client
-		raw, err = readFrame(sConn)
-		if err != nil {
-			t.Errorf("readFrame v1: %v", err)
-			return
-		}
-		if err := (&h).UnmarshalJSON(raw); err == nil && h.Version != LegacyProtoVersion {
-			t.Errorf("expected version 1 hello, got %d", h.Version)
-		}
-		_ = writeFrame(sConn, Welcome{
-			Version:   LegacyProtoVersion,
-			Type:      TypeWelcome,
-			SessionID: "sess-legacy",
-		})
-	}()
-
-	sid, _, err := Client(cConn, "dev-legacy", nil)
-	if err != nil {
-		t.Fatalf("Client fallback err: %v", err)
-	}
-	if sid != "sess-legacy" {
-		t.Fatalf("sid = %q, want sess-legacy", sid)
 	}
 }
 
