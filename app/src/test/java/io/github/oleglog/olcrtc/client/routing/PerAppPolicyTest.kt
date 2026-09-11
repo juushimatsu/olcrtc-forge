@@ -6,7 +6,7 @@ import org.junit.Test
 class PerAppPolicyTest {
     @Test
     fun alwaysExcludesVpnAppFromItsOwnTunnel() {
-        val ownPackage = "io.github.oleglog.olcrtc.client"
+        val ownPackage = "org.olcrtc.forge"
 
         assertEquals(
             setOf(ownPackage),

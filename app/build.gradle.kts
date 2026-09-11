@@ -19,7 +19,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.oleglog.olcrtc.client"
+        applicationId = "org.olcrtc.forge"
         minSdk = 26
         targetSdk = 36
         versionCode = 81

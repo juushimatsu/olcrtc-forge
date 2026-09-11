@@ -1574,10 +1574,10 @@ class OlcrtcVpnService : VpnService() {
     }
 
     companion object {
-        const val ACTION_START = "io.github.oleglog.olcrtc.client.vpn.START"
-        const val ACTION_STOP = "io.github.oleglog.olcrtc.client.vpn.STOP"
-        const val ACTION_RECONNECT = "io.github.oleglog.olcrtc.client.vpn.RECONNECT"
-        const val ACTION_TOGGLE = "io.github.oleglog.olcrtc.client.vpn.TOGGLE"
+        const val ACTION_START = "org.olcrtc.forge.vpn.START"
+        const val ACTION_STOP = "org.olcrtc.forge.vpn.STOP"
+        const val ACTION_RECONNECT = "org.olcrtc.forge.vpn.RECONNECT"
+        const val ACTION_TOGGLE = "org.olcrtc.forge.vpn.TOGGLE"
         const val EXTRA_PROFILE_ID = "profile_id"
         const val EXTRA_SUBSCRIPTION_PROFILE_ID = "subscription_profile_id"
         const val NOTIFICATION_CHANNEL_ID = "vpn"
