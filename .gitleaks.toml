@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore unit and instrumentation test fixtures"
+paths = [
+    '''_test\.go$''',
+    '''Test\.kt$''',
+    '''src/test/''',
+    '''src/androidTest/'''
+]
