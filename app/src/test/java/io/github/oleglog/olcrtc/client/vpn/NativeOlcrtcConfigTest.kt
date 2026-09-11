@@ -52,25 +52,6 @@ class NativeOlcrtcConfigTest {
     }
 
     @Test
-    fun udpRelayDefaultsOffAndPropagatesWhenEnabled() {
-        val profile = OlcrtcProfile(
-            name = "WB",
-            provider = OlcrtcProfile.Provider.WBSTREAM,
-            transport = OlcrtcProfile.Transport.VP8CHANNEL,
-            roomId = "room",
-            clientId = "client",
-            keyHex = "a".repeat(64),
-        )
-        val dns = DnsEndpoint.parse("1.1.1.1:53")
-
-        assertEquals(false, NativeOlcrtcConfig.from(profile, socksPort = 1081, dns = dns).udpRelay)
-        assertEquals(
-            true,
-            NativeOlcrtcConfig.from(profile, socksPort = 1081, dns = dns, udpRelay = true).udpRelay,
-        )
-    }
-
-    @Test
     fun speedPresetsMatchKnownPacingValues() {
         assertEquals(
             OlcrtcProfile.Companion.SpeedPreset.MAX,

@@ -15,8 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/openlibrecommunity/olcrtc/internal/engine"
-	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/common"
@@ -172,28 +170,19 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		return nil, err
 	}
 
-	session, err := enginebuiltin.Open(ctx, cfg.Carrier, enginebuiltin.Config{
-		RoomURL:   cfg.RoomURL,
-		Name:      cfg.Name,
-		OnData:    nil,
-		DNSServer: cfg.DNSServer,
-		ProxyAddr: cfg.ProxyAddr,
-		ProxyPort: cfg.ProxyPort,
-		Insecure:  cfg.Insecure,
-		Engine:    cfg.Engine,
-		URL:       cfg.URL,
-		Token:     cfg.Token,
-	})
+	engineCfg := cfg
+	engineCfg.OnData = nil
+	engineCfg.OnPeerData = nil
+
+	session, err := engineCfg.OpenEngine(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("open engine session: %w", err)
+		return nil, err
 	}
 
-	vt, ok := session.(engine.VideoTrackCapable)
-	if !ok || !session.Capabilities().VideoTrack {
-		_ = session.Close()
-		return nil, ErrVideoTrackUnsupported
+	stream, err := common.NewEngineVideoSession(session)
+	if err != nil {
+		return nil, fmt.Errorf("open video session: %w", err)
 	}
-	stream := &engineVideoSession{session: session, vt: vt}
 
 	// Stream/track IDs must be unique per peer — Jitsi rejects session-accept
 	// when msid collides with another participant in the conference.
@@ -220,7 +209,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 }
 
 func newStreamTransport(
-	stream *engineVideoSession,
+	stream videoSession,
 	track *webrtc.TrackLocalStaticSample,
 	cfg transport.Config,
 	opts Options,
@@ -564,10 +553,7 @@ func (p *streamTransport) CanSend() bool {
 // can rely on these properties end-to-end.
 func (p *streamTransport) Features() transport.Features {
 	return transport.Features{
-		Reliable:        true,
-		Ordered:         true,
-		MessageOriented: true,
-		MaxPayloadSize:  defaultMaxPayloadSize,
+		MaxPayloadSize: defaultMaxPayloadSize,
 	}
 }
 

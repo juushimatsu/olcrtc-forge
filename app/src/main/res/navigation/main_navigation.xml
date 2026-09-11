@@ -13,10 +13,6 @@
         android:name="io.github.oleglog.olcrtc.client.profiles.ProfilesFragment"
         android:label="@string/navigation_profiles" />
     <fragment
-        android:id="@+id/statisticsFragment"
-        android:name="io.github.oleglog.olcrtc.client.statistics.StatisticsFragment"
-        android:label="@string/navigation_statistics" />
-    <fragment
         android:id="@+id/settingsFragment"
         android:name="io.github.oleglog.olcrtc.client.settings.SettingsFragment"
         android:label="@string/navigation_settings" />

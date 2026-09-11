@@ -35,7 +35,7 @@ internal class GitHubUpdateClient(
         connection.readTimeout = TIMEOUT_MILLIS
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "application/vnd.github+json")
-        connection.setRequestProperty("User-Agent", "olcRTC-Client")
+        connection.setRequestProperty("User-Agent", "OLCRTC-Forge")
         return connection.use {
             require(responseCode in 200..299) { "GitHub update check failed: HTTP $responseCode" }
             inputStream.reader().use { it.readText() }

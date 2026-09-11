@@ -3,7 +3,7 @@
 //
 // Public Jitsi Meet servers do not require authentication for guest access;
 // the only "credentials" the engine needs are the host+room pair extracted
-// from a user-supplied room URL. This provider does no HTTP at all — it just
+// from a user-supplied room URL. This provider does no HTTP at all - it just
 // parses the URL and forwards host+room to the engine via auth.Credentials.
 //
 // Supported RoomURL forms:
@@ -14,7 +14,7 @@
 //
 // Optional URL path prefixes (e.g. "/jitsi") are preserved as part of the
 // host when present, so deployments behind a path-mounted reverse proxy work
-// transparently — the j library accepts any host string the WebSocket dial
+// transparently - the j library accepts any host string the WebSocket dial
 // can resolve.
 package jitsi
 
@@ -41,34 +41,27 @@ type Provider struct{}
 // Engine reports which engine consumes credentials from this auth provider.
 func (Provider) Engine() string { return "jitsi" }
 
-const defaultServiceURL = "https://meet.small-dm.ru"
+const defaultServiceURL = "https://meet.handyweb.org"
 
 // DefaultServiceURL returns the default Jitsi Meet service URL used by config
 // defaults and interactive helpers. Users should verify which server is
-// accessible in their network: https://meet.small-dm.ru, https://meet1.arbitr.ru,
-// https://meet.handyweb.org, or https://meet.cryptopro.ru.
+// accessible in their network: https://meet.small-dm.ru, https://meet1.arbitr.ru, or https://meet.handyweb.org
 func (Provider) DefaultServiceURL() string { return defaultServiceURL }
 
 // Issue parses cfg.RoomURL into host+room and returns engine credentials.
 //
 // The URL field of the returned Credentials carries the Jitsi host (e.g.
 // "meet.example.com"); the room name lives in Extra under CredentialKeyRoom.
-// Token is unused — Jitsi guest access requires no token.
-// If cfg.Insecure is true, Extra["insecure"] is set to "true" so the engine
-// dials ws:// instead of wss://.
+// Token is unused - Jitsi guest access requires no token.
 func (Provider) Issue(_ context.Context, cfg auth.Config) (auth.Credentials, error) {
 	host, room, err := parseRoomURL(cfg.RoomURL)
 	if err != nil {
 		return auth.Credentials{}, err
 	}
-	extra := map[string]string{CredentialKeyRoom: room}
-	if cfg.Insecure {
-		extra["insecure"] = "true"
-	}
 	return auth.Credentials{
 		URL:   host,
 		Token: "",
-		Extra: extra,
+		Extra: map[string]string{CredentialKeyRoom: room},
 	}, nil
 }
 
@@ -97,8 +90,4 @@ func parseRoomURL(raw string) (string, string, error) {
 		return "", "", fmt.Errorf("%w: %q", ErrInvalidRoomURL, raw)
 	}
 	return host, room, nil
-}
-
-func init() { //nolint:gochecknoinits // auth registration is the canonical Go pattern for plugins
-	auth.Register("jitsi", Provider{})
 }

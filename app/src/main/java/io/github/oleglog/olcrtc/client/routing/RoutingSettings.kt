@@ -43,16 +43,6 @@ internal class RoutingSettings private constructor(
         )
     }
 
-    fun getAppearance(): Appearance = runBlocking {
-        val preferences = store.data.first()
-        Appearance(
-            palette = parseAppearancePalette(preferences[APPEARANCE_PALETTE]),
-            accent = parseAppearanceAccent(preferences[APPEARANCE_ACCENT]),
-            glowIntensity = (preferences[APPEARANCE_GLOW_INTENSITY] ?: 60).coerceIn(0, 100),
-            motionEnabled = preferences[APPEARANCE_MOTION] ?: true,
-        ).normalized()
-    }
-
     fun getPerAppPolicy(): PerAppPolicy = runBlocking {
         val preferences = store.data.first()
         PerAppPolicy(
@@ -109,19 +99,6 @@ internal class RoutingSettings private constructor(
         store.edit { preferences -> preferences[AUTO_FAILOVER] = value }
     }
 
-    /** UDP relay over the olcRTC carrier (server-v1.9.76+). Default off (opt-in). */
-    fun getUdpRelay(): Boolean = runBlocking {
-        store.data.first()[UDP_RELAY] ?: false
-    }
-
-    suspend fun setUdpRelay(value: Boolean) {
-        store.edit { preferences -> preferences[UDP_RELAY] = value }
-    }
-
-    fun setUdpRelayBlocking(value: Boolean) = runBlocking {
-        store.edit { preferences -> preferences[UDP_RELAY] = value }
-    }
-
     suspend fun setDnsServer(value: String?) {
         val normalized = value?.let { DnsEndpoint.parse(it).toString() }
         store.edit { preferences ->
@@ -134,16 +111,6 @@ internal class RoutingSettings private constructor(
             preferences[BACKGROUND_EFFECTS] = value.enabled
             preferences[BACKGROUND_EFFECT_STYLE] = value.style.name
             preferences[BACKGROUND_EFFECT_INTENSITY] = value.intensity.name
-        }
-    }
-
-    suspend fun setAppearance(value: Appearance) {
-        val normalized = value.normalized()
-        store.edit { preferences ->
-            preferences[APPEARANCE_PALETTE] = normalized.palette.name
-            preferences[APPEARANCE_ACCENT] = normalized.accent.name
-            preferences[APPEARANCE_GLOW_INTENSITY] = normalized.glowIntensity
-            preferences[APPEARANCE_MOTION] = normalized.motionEnabled
         }
     }
 
@@ -218,23 +185,6 @@ internal class RoutingSettings private constructor(
         enum class Intensity { LOW, MEDIUM, HIGH }
     }
 
-    data class Appearance(
-        val palette: Palette = Palette.SYSTEM,
-        val accent: Accent = Accent.AUTO,
-        val glowIntensity: Int = 60,
-        val motionEnabled: Boolean = true,
-    ) {
-        init {
-            require(glowIntensity in 0..100) { "Glow intensity must be between 0 and 100" }
-        }
-
-        fun normalized(): Appearance =
-            if (palette == Palette.MONO && accent != Accent.AUTO) copy(accent = Accent.AUTO) else this
-
-        enum class Palette { SYSTEM, NEUTRAL, BRONZE, BLACK, MONO }
-        enum class Accent { AUTO, TEAL, BLUE, VIOLET, ROSE, AMBER }
-    }
-
     companion object {
         private const val FILE_NAME = "routing"
         private val PRESET = stringPreferencesKey("preset")
@@ -243,10 +193,6 @@ internal class RoutingSettings private constructor(
         private val BACKGROUND_EFFECTS = booleanPreferencesKey("background_effects")
         private val BACKGROUND_EFFECT_STYLE = stringPreferencesKey("background_effect_style")
         private val BACKGROUND_EFFECT_INTENSITY = stringPreferencesKey("background_effect_intensity")
-        private val APPEARANCE_PALETTE = stringPreferencesKey("appearance_palette")
-        private val APPEARANCE_ACCENT = stringPreferencesKey("appearance_accent")
-        private val APPEARANCE_GLOW_INTENSITY = intPreferencesKey("appearance_glow_intensity")
-        private val APPEARANCE_MOTION = booleanPreferencesKey("appearance_motion")
         private val PER_APP_MODE = stringPreferencesKey("per_app_mode")
         private val PER_APP_PACKAGES = stringSetPreferencesKey("per_app_packages")
         private val VPN_DESIRED_CONNECTED = booleanPreferencesKey("vpn_desired_connected")
@@ -255,7 +201,6 @@ internal class RoutingSettings private constructor(
         private val FAVORITE_LOCAL_PROFILES = stringSetPreferencesKey("favorite_local_profiles")
         private val LAST_SUCCESSFUL_PROFILE = stringPreferencesKey("last_successful_profile")
         private val AUTO_SUBSCRIPTION_REFRESH = booleanPreferencesKey("auto_subscription_refresh")
-        private val UDP_RELAY = booleanPreferencesKey("udp_relay")
         private val AUTO_FAILOVER = booleanPreferencesKey("auto_failover")
 
         @Volatile
@@ -278,14 +223,3 @@ internal fun parseBackgroundEffectStyle(value: String?): RoutingSettings.Backgro
         ?.let { runCatching { RoutingSettings.BackgroundEffects.Style.valueOf(it) }.getOrNull() }
         ?: RoutingSettings.BackgroundEffects.Style.DRIFT
 }
-
-internal fun parseAppearancePalette(value: String?): RoutingSettings.Appearance.Palette = when (value) {
-    "SAGE", "POLAR" -> RoutingSettings.Appearance.Palette.NEUTRAL
-    else -> value
-        ?.let { runCatching { RoutingSettings.Appearance.Palette.valueOf(it) }.getOrNull() }
-        ?: RoutingSettings.Appearance.Palette.SYSTEM
-}
-
-internal fun parseAppearanceAccent(value: String?): RoutingSettings.Appearance.Accent = value
-    ?.let { runCatching { RoutingSettings.Appearance.Accent.valueOf(it) }.getOrNull() }
-    ?: RoutingSettings.Appearance.Accent.AUTO

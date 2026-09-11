@@ -15,7 +15,6 @@ internal class ProfileLatencyProbe(
     context: Context,
     private val dnsServer: String?,
     private val workers: ExecutorService,
-    private val udpRelay: Boolean = false,
 ) {
     private val assetDirectory = context.noBackupFilesDir.absolutePath
 
@@ -79,7 +78,6 @@ internal class ProfileLatencyProbe(
             profile.value,
             freeLoopbackPort(),
             checkNotNull(dns.carrier),
-            udpRelay = udpRelay,
         )
         val xrayPort = freeLoopbackPort(olcrtc.socksPort)
         val result = runCatching {

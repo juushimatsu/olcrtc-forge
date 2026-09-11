@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">olcrtc-forge</string>
+    <string name="app_name">OLCRTC Forge</string>
     <string name="navigation_connection">VPN</string>
     <string name="navigation_profiles">Subscriptions</string>
     <string name="navigation_statistics">Traffic</string>
@@ -122,12 +122,6 @@
     <string name="failover_auto_subtitle">Try other connections on failure</string>
     <string name="failover_enabled">Auto failover on: the app will try other connections after 2 failed attempts</string>
     <string name="failover_disabled">Auto failover off: the app will keep retrying the same connection</string>
-    <string name="udp_relay">UDP relay: calls &amp; games (experimental)</string>
-    <string name="udp_relay_title">UDP relay</string>
-    <string name="udp_relay_subtitle">For voice calls and online games</string>
-    <string name="udp_relay_enabled">UDP relay on: for voice calls and online games</string>
-    <string name="udp_relay_disabled">UDP relay off: calls and app traffic route over TCP</string>
-    <string name="udp_relay_description">Route application UDP traffic through the tunnel. Needed for voice calls (Discord, Telegram) and online games. Does not affect web browsing or Speedtest.</string>
     <string name="profile_field_speed_preset">Speed preset</string>
     <string name="profile_delete_title">Delete profile?</string>
     <string name="profile_delete_message">Delete %1$s?</string>
@@ -250,10 +244,10 @@
     <string name="settings_update_no_asset">Release found, but no compatible APK asset is available</string>
     <string name="settings_system_screen_unavailable">System settings screen is unavailable on this device</string>
     <string name="battery_optimization_prompt_title">Improve background VPN stability</string>
-    <string name="battery_optimization_prompt_message">Android may suspend the VPN when the screen is off. Disable battery optimization for olcrtc-forge for more reliable background operation and reconnects.</string>
-    <string name="battery_optimization_prompt_never">Do not show again</string>
-    <string name="battery_optimization_prompt_open">Open app settings</string>
-    <string name="battery_optimization_already_disabled">Battery optimization is already disabled for olcrtc-forge</string>
+    <string name="battery_optimization_prompt_message">Android may suspend the VPN when the screen is off. Disable battery optimization for OLCRTC Forge for more reliable background operation and reconnects.</string>
+    <string name="battery_optimization_prompt_never">Don\'t show again</string>
+    <string name="battery_optimization_prompt_open">Open settings</string>
+    <string name="battery_optimization_already_disabled">Battery optimization is already disabled for OLCRTC Forge</string>
     <string name="settings_about_message">Version: %1$s\nDeveloper: %2$s</string>
     <string name="settings_about_repository">Original repository on GitHub</string>
     <string name="settings_about_telegram">Developer Telegram</string>
@@ -312,6 +306,10 @@
     <string name="traffic_zero">0 B</string>
     <string name="traffic_zero_rate">0 B/s</string>
     <string name="traffic_rate_format">%1$s/s</string>
+    <string name="traffic_download_format">↓ %1$s/s</string>
+    <string name="traffic_upload_format">↑ %1$s/s</string>
+    <string name="traffic_session_format">Session: %1$s</string>
+    <string name="traffic_session_detailed_format">Session: %1$s (↓ %2$s  ↑ %3$s)</string>
     <string name="settings_diagnostics_description">Local connection logs with passwords and encryption keys removed. Safe to share for technical support.</string>
     <string name="settings_view_diagnostics">View connection log</string>
     <string name="settings_copy_diagnostics">Copy connection log</string>

@@ -12,18 +12,24 @@ internal object GomobileCore : NativeCore {
     }
 
     override fun startOlcrtc(config: NativeOlcrtcConfig) {
+        android.util.Log.i(
+            "GomobileCore",
+            "startOlcrtc: provider=${config.provider}, transport=${config.transport}, " +
+                "compatibilityMode=${config.compatibilityMode}, room=${config.roomId}, " +
+                "hasAuthToken=${!config.authToken.isNullOrBlank()}",
+        )
         Mobilecore.startOlcrtc(
             config.provider,
             config.transport,
             config.compatibilityMode,
             config.roomId,
             config.clientId,
+            config.authToken ?: "",
             config.keyHex,
             config.dnsServer,
             config.vp8Fps.toLong(),
             config.vp8BatchSize.toLong(),
             config.keepaliveSeconds.toLong(),
-            config.udpRelay,
             config.socksPort.toLong(),
         )
     }
@@ -60,12 +66,12 @@ internal object GomobileCore : NativeCore {
             config.compatibilityMode,
             config.roomId,
             config.clientId,
+            config.authToken ?: "",
             config.keyHex,
             config.dnsServer,
             config.vp8Fps.toLong(),
             config.vp8BatchSize.toLong(),
             config.keepaliveSeconds.toLong(),
-            config.udpRelay,
             config.socksPort.toLong(),
         )
     }

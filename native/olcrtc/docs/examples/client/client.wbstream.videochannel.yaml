@@ -1,0 +1,43 @@
+# Client config: wbstream + videochannel
+# Run: olcrtc docs/examples/client/client.wbstream.videochannel.yaml
+
+mode: cnc # role: srv (server) or cnc (client)
+
+auth:
+  provider: wbstream # call service provider used for signaling
+
+# For wbstream: Room ID returned by the service.
+# Must match the server.
+room:
+  id: "REPLACE_WITH_WB_ROOM_ID" # room id
+
+crypto:
+  # You can use key_file: "./olcrtc.key" to avoid storing the secret here.
+  key: "REPLACE_ME_WITH_64_HEX_CHARS" # must match the server
+
+net:
+  transport: videochannel # transport to use, e.g. datachannel
+  dns: "8.8.8.8:53" # dns used to resolve names
+
+liveness:
+  interval: 10s # how often to send liveness checks
+  timeout: 15s # wait time for a liveness reply
+  failures: 4 # consecutive failures before the link is considered dead
+
+socks: # local socks proxy exposed to apps
+  host: "127.0.0.1" # address to listen on
+  port: 8808 # port to listen on
+  user: "" # optional inbound auth
+  pass: "" # optional inbound auth
+
+video:
+  width: 1920 # frame width in pixels
+  height: 1080 # frame height in pixels
+  fps: 30 # frames per second
+  codec: qrcode # payload encoding used inside the video
+  qr_size: 0 # qr module size in px (0 = auto)
+  qr_recovery: low # qr error correction level (low/medium/high)
+  tile_module: 4 # data tile module size
+  tile_rs: 20 # reed-solomon parity per tile
+
+debug: false # log actions in more detail

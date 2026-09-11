@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	lksdk "github.com/livekit/server-sdk-go/v2"
-	"github.com/openlibrecommunity/olcrtc/internal/engine"
+	lksdk "github.com/owenewans/owenlivekit/v2"
 	"github.com/pion/webrtc/v4"
+
+	"github.com/openlibrecommunity/olcrtc/internal/engine"
 )
 
 const (
@@ -59,8 +60,6 @@ func (r *fakeRoom) disconnect() {
 	r.state = lksdk.ConnectionStateDisconnected
 }
 
-func (r *fakeRoom) subscribeToVideoTracks() {}
-
 func (r *fakeRoom) connectionState() lksdk.ConnectionState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -68,20 +67,23 @@ func (r *fakeRoom) connectionState() lksdk.ConnectionState {
 }
 
 type fakeConnector struct {
-	mu        sync.Mutex
-	urls      []string
-	tokens    []string
-	callbacks []*lksdk.RoomCallback
-	rooms     []*fakeRoom
-	connected chan struct{}
-	err       error
+	mu           sync.Mutex
+	urls         []string
+	tokens       []string
+	callbacks    []*lksdk.RoomCallback
+	optionCounts []int
+	rooms        []*fakeRoom
+	connected    chan struct{}
+	err          error
 }
 
 func newFakeConnector() *fakeConnector {
 	return &fakeConnector{connected: make(chan struct{}, 8)}
 }
 
-func (c *fakeConnector) connect(url, token string, cb *lksdk.RoomCallback) (roomHandle, error) {
+func (c *fakeConnector) connect(
+	url, token string, cb *lksdk.RoomCallback, opts ...lksdk.ConnectOption,
+) (roomHandle, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.err != nil {
@@ -91,6 +93,7 @@ func (c *fakeConnector) connect(url, token string, cb *lksdk.RoomCallback) (room
 	c.urls = append(c.urls, url)
 	c.tokens = append(c.tokens, token)
 	c.callbacks = append(c.callbacks, cb)
+	c.optionCounts = append(c.optionCounts, len(opts))
 	c.rooms = append(c.rooms, room)
 	c.connected <- struct{}{}
 	return room, nil
@@ -120,6 +123,12 @@ func (c *fakeConnector) snapshot() ([]string, []string) {
 	return append([]string(nil), c.urls...), append([]string(nil), c.tokens...)
 }
 
+func (c *fakeConnector) options() []int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]int(nil), c.optionCounts...)
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -132,7 +141,6 @@ func waitFor(t *testing.T, cond func() bool) {
 	t.Fatal("condition was not met before timeout")
 }
 
-//nolint:cyclop // reconnect flow test keeps setup and postconditions in one scenario
 func TestReconnectRefreshesCredentialsAndReplacesRoom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -157,7 +165,7 @@ func TestReconnectRefreshesCredentialsAndReplacesRoom(t *testing.T) {
 	s.connectRoom = connector.connect
 
 	reconnected := make(chan struct{}, 1)
-	s.SetReconnectCallback(func(*webrtc.DataChannel) {
+	s.SetReconnectCallback(func() {
 		reconnected <- struct{}{}
 	})
 
@@ -185,6 +193,9 @@ func TestReconnectRefreshesCredentialsAndReplacesRoom(t *testing.T) {
 	if refreshes != 1 {
 		t.Fatalf("refreshes = %d, want 1", refreshes)
 	}
+	if got := connector.options(); len(got) != 2 || got[0] < 2 || got[0] != got[1] {
+		t.Fatalf("connect option counts = %v, want the same resolver options on reconnect", got)
+	}
 	oldRoom := connector.room(0)
 	oldRoom.mu.Lock()
 	if oldRoom.disconnected != 1 || oldRoom.unpublished != 1 {
@@ -201,7 +212,6 @@ func TestReconnectRefreshesCredentialsAndReplacesRoom(t *testing.T) {
 	}
 }
 
-//nolint:cyclop // terminal disconnect test keeps setup and cleanup assertions together
 func TestDisconnectedEndsWhenReconnectDisallowed(t *testing.T) {
 	ctx := context.Background()
 	sess, err := New(ctx, engine.Config{URL: testOldURL, Token: testOldToken})
@@ -261,7 +271,7 @@ func TestDisconnectedEndsWhenReconnectDisallowed(t *testing.T) {
 
 func TestCanSendRequiresConnectedRoomAndQueueHeadroom(t *testing.T) {
 	s := &Session{
-		sendQueue: make(chan []byte, defaultSendQueueSize),
+		sendQueue: make(chan []byte, engine.DefaultSendQueueSize),
 		done:      make(chan struct{}),
 		closeCh:   make(chan struct{}),
 	}
@@ -281,7 +291,7 @@ func TestCanSendRequiresConnectedRoomAndQueueHeadroom(t *testing.T) {
 		t.Fatal("CanSend() = false for connected room")
 	}
 
-	for range defaultSendQueueCapHard {
+	for range engine.DefaultSendQueueCapHard {
 		s.sendQueue <- []byte("x")
 	}
 	if s.CanSend() {
@@ -296,17 +306,97 @@ func TestReconnectFailureRetriesUntilContextDone(t *testing.T) {
 	s := &Session{
 		url:   testOldURL,
 		token: testOldToken,
-		connectRoom: func(string, string, *lksdk.RoomCallback) (roomHandle, error) {
+		connectRoom: func(string, string, *lksdk.RoomCallback, ...lksdk.ConnectOption) (roomHandle, error) {
 			cancel()
 			return nil, errFakeConnect
 		},
-		reconnectCh: make(chan struct{}, 1),
-		closeCh:     make(chan struct{}),
-		sendQueue:   make(chan []byte, defaultSendQueueSize),
-		done:        make(chan struct{}),
+		closeCh:   make(chan struct{}),
+		sendQueue: make(chan []byte, engine.DefaultSendQueueSize),
+		done:      make(chan struct{}),
 	}
-	if terminal := s.handleReconnectAttempt(ctx); !terminal {
-		t.Fatal("handleReconnectAttempt() = false after context cancellation")
+	s.Configure(engine.ReconnectorConfig{
+		MaxAttempts: maxReconnects,
+		Reconnect:   s.reconnect,
+	})
+	finished := make(chan struct{})
+	go func() {
+		s.WatchConnection(ctx)
+		close(finished)
+	}()
+	s.queueReconnect()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("WatchConnection did not stop after context cancellation")
+	}
+}
+
+func TestWaitForConnectedRoomIsBounded(t *testing.T) {
+	s := &Session{
+		sendQueue: make(chan []byte, engine.DefaultSendQueueSize),
+		done:      make(chan struct{}),
+		closeCh:   make(chan struct{}),
+		roomReady: 30 * time.Millisecond,
+	}
+	room := newFakeRoom()
+	room.state = lksdk.ConnectionStateDisconnected
+	s.setRoom(room)
+
+	got, err := s.waitForConnectedRoom()
+	if got != nil {
+		t.Fatalf("waitForConnectedRoom() = %v, want nil", got)
+	}
+	if !errors.Is(err, ErrRoomNotConnected) {
+		t.Fatalf("waitForConnectedRoom() error = %v, want %v", err, ErrRoomNotConnected)
+	}
+}
+
+func TestWaitForConnectedRoomStopsOnShutdown(t *testing.T) {
+	s := &Session{
+		sendQueue: make(chan []byte, engine.DefaultSendQueueSize),
+		done:      make(chan struct{}),
+		closeCh:   make(chan struct{}),
+	}
+	room := newFakeRoom()
+	room.state = lksdk.ConnectionStateDisconnected
+	s.setRoom(room)
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		close(s.done)
+	}()
+
+	if _, err := s.waitForConnectedRoom(); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("waitForConnectedRoom() error = %v, want %v", err, ErrSessionClosed)
+	}
+}
+
+func TestGetBufferedAmountTracksQueue(t *testing.T) {
+	s := &Session{
+		sendQueue: make(chan []byte, engine.DefaultSendQueueSize),
+		done:      make(chan struct{}),
+		closeCh:   make(chan struct{}),
+	}
+	if got := s.GetBufferedAmount(); got != 0 {
+		t.Fatalf("GetBufferedAmount() = %d, want 0", got)
+	}
+	if err := s.Send([]byte("0123456789")); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	if got := s.GetBufferedAmount(); got != 10 {
+		t.Fatalf("GetBufferedAmount() = %d, want 10", got)
+	}
+}
+
+func TestCloseSignalIsNilSafe(t *testing.T) {
+	engine.CloseSignal(nil)
+	ch := make(chan struct{})
+	engine.CloseSignal(ch)
+	engine.CloseSignal(ch)
+	select {
+	case <-ch:
+	default:
+		t.Fatal("closeSignal() did not close the channel")
 	}
 }
 

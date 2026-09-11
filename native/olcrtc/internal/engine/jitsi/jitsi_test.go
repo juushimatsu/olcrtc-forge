@@ -2,12 +2,13 @@ package jitsi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
-	"time"
+
+	"github.com/zarazaex69/j"
 
 	"github.com/openlibrecommunity/olcrtc/internal/engine"
-	"github.com/zarazaex69/j"
 )
 
 const (
@@ -39,33 +40,6 @@ func TestNormaliseHost(t *testing.T) {
 	}
 }
 
-func TestXMPPDomainTargetsVirtualhost(t *testing.T) {
-	const (
-		xmppVHost = "meet.jitsi"
-		webHost   = "meet.mamba.group"
-	)
-	tests := []struct {
-		name     string
-		jid      string
-		fallback string
-		want     string
-	}{
-		{"web host differs from xmpp domain", "8307a4f4@" + xmppVHost + "/T4i4s0jt", webHost, xmppVHost},
-		{"no resource part", "uuid@" + xmppVHost, webHost, xmppVHost},
-		{"empty jid falls back to host", "", webHost, webHost},
-		{"jid without domain falls back", "node-only", "meet.handyweb.org", "meet.handyweb.org"},
-		{"empty domain falls back", "node@/resource", "meet.small-dm.ru", "meet.small-dm.ru"},
-		{"domain only with resource", "node@" + xmppVHost + "/", "fallback.host", xmppVHost},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := xmppDomain(tt.jid, tt.fallback); got != tt.want {
-				t.Fatalf("xmppDomain(%q, %q) = %q, want %q", tt.jid, tt.fallback, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestDecodeRaw(t *testing.T) {
 	const payload = "hello world"
 	encoded := encodeForTest(t, []byte(payload))
@@ -83,6 +57,53 @@ func TestDecodeRaw(t *testing.T) {
 	}
 	if got := decodeRaw(makeBridgeMessage(classEndpoint, map[string]any{rawFieldKey: "not-base64!!!"})); got != nil {
 		t.Fatalf("decodeRaw(bad base64) = %q, want nil", got)
+	}
+}
+
+// TestDecodeRawAcceptsMsgPayload guards olcrtc#143: sendEndpointRaw now emits
+// the payload under msgPayload.raw (the shape JVB actually documents for
+// EndpointMessage) instead of a nonstandard top-level "raw" field. decodeRaw
+// must read that shape so our own traffic round-trips.
+func TestDecodeRawAcceptsMsgPayload(t *testing.T) {
+	const payload = "hello msgPayload"
+	encoded := encodeForTest(t, []byte(payload))
+
+	got := decodeRaw(makeBridgeMessage(classEndpoint, map[string]any{
+		"msgPayload": map[string]any{rawFieldKey: encoded},
+	}))
+	if string(got) != payload {
+		t.Fatalf("decodeRaw(msgPayload.raw) = %q, want %q", got, payload)
+	}
+
+	// A msgPayload without a raw sub-field falls through to nil, not a panic.
+	if got := decodeRaw(makeBridgeMessage(classEndpoint, map[string]any{
+		"msgPayload": map[string]any{"other": "field"},
+	})); got != nil {
+		t.Fatalf("decodeRaw(msgPayload without raw) = %q, want nil", got)
+	}
+}
+
+// TestSendEndpointRawFieldOrderAndShape guards olcrtc#143: the wire JSON must
+// carry the payload as msgPayload.raw with fields declared in the order
+// colibriClass, to, msgPayload. Some Jackson versions on the bridge side drop
+// the payload if a custom field precedes "to"
+// (https://github.com/jitsi/jitsi-videobridge/pull/2424), so this is
+// asserted at the byte level, not just via a round-trip through
+// encoding/json's map-based unmarshalling which would hide a regression to
+// an unordered map[string]any payload.
+func TestSendEndpointRawFieldOrderAndShape(t *testing.T) {
+	msg := endpointMessage{
+		ColibriClass: "EndpointMessage",
+		To:           "abc123",
+		MsgPayload:   endpointRawPayload{Raw: "cGF5bG9hZA=="},
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	want := `{"colibriClass":"EndpointMessage","to":"abc123","msgPayload":{"raw":"cGF5bG9hZA=="}}`
+	if string(data) != want {
+		t.Fatalf("Marshal() = %s, want %s", data, want)
 	}
 }
 
@@ -113,53 +134,10 @@ func TestNewSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer func() { _ = sess.Close() }()
-	caps := sess.Capabilities()
-	if !caps.ByteStream || !caps.VideoTrack {
-		t.Fatalf("Capabilities = %+v, want ByteStream && VideoTrack", caps)
-	}
+	t.Cleanup(func() { _ = sess.Close() })
 }
 
-func TestSCTPBridgeKeepsLegacyMaxMessageSizeByDefault(t *testing.T) {
-	t.Setenv("OLCRTC_JITSI_SCTP_MAX_MESSAGE_SIZE", "")
-
-	var sess Session
-	sess.sctpBridge.Store(true)
-
-	if got := sess.bridgeMaxMessageSize(); got != bridgeMaxMessageSize {
-		t.Fatalf("bridgeMaxMessageSize() = %d, want legacy %d", got, bridgeMaxMessageSize)
-	}
-	if got, want := sess.ByteStreamMaxPayloadSize(), bridgeMaxMessageSize-bridgeFrameHeaderLen; got != want {
-		t.Fatalf("ByteStreamMaxPayloadSize() = %d, want %d", got, want)
-	}
-}
-
-func TestSCTPBridgeMaxMessageSizeEnvIsExplicitOptIn(t *testing.T) {
-	t.Setenv("OLCRTC_JITSI_SCTP_MAX_MESSAGE_SIZE", "1200")
-
-	var sess Session
-	sess.sctpBridge.Store(true)
-
-	if got := sess.bridgeMaxMessageSize(); got != 1200 {
-		t.Fatalf("bridgeMaxMessageSize() = %d, want explicit env override 1200", got)
-	}
-	if got, want := sess.ByteStreamMaxPayloadSize(), 1200-bridgeFrameHeaderLen; got != want {
-		t.Fatalf("ByteStreamMaxPayloadSize() = %d, want %d", got, want)
-	}
-}
-
-func TestSCTPBridgeInvalidEnvFallsBackToLegacyMaxMessageSize(t *testing.T) {
-	t.Setenv("OLCRTC_JITSI_SCTP_MAX_MESSAGE_SIZE", "8")
-
-	var sess Session
-	sess.sctpBridge.Store(true)
-
-	if got := sess.bridgeMaxMessageSize(); got != bridgeMaxMessageSize {
-		t.Fatalf("bridgeMaxMessageSize() = %d, want legacy %d", got, bridgeMaxMessageSize)
-	}
-}
-
-func TestByteStreamNegotiatesPeerConnectionWithoutRequestingVideo(t *testing.T) {
+func TestByteStreamWebSocketNegotiatesPeerConnectionWithoutRTCPKeepalive(t *testing.T) {
 	sess, err := New(context.Background(), engine.Config{
 		URL:    testHost,
 		Extra:  map[string]string{credentialKeyRoom: testRoom},
@@ -174,8 +152,31 @@ func TestByteStreamNegotiatesPeerConnectionWithoutRequestingVideo(t *testing.T) 
 	if !ok {
 		t.Fatal("sess is not *Session")
 	}
-	if !js.shouldNegotiatePC() {
-		t.Fatal("shouldNegotiatePC() = false for bytestream session")
+	if !js.shouldNegotiatePC(true) {
+		t.Fatal("shouldNegotiatePC(true) = false for websocket bytestream session")
+	}
+	if js.shouldRequestVideo() {
+		t.Fatal("shouldRequestVideo() = true for bytestream-only session")
+	}
+}
+
+func TestByteStreamSCTPFallbackNegotiatesPeerConnection(t *testing.T) {
+	sess, err := New(context.Background(), engine.Config{
+		URL:    testHost,
+		Extra:  map[string]string{credentialKeyRoom: testRoom},
+		OnData: func([]byte) {},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	js, ok := sess.(*Session)
+	if !ok {
+		t.Fatal("sess is not *Session")
+	}
+	if !js.shouldNegotiatePC(true) {
+		t.Fatal("shouldNegotiatePC(true) = false for SCTP bytestream fallback")
 	}
 	if js.shouldRequestVideo() {
 		t.Fatal("shouldRequestVideo() = true for bytestream-only session")
@@ -196,14 +197,14 @@ func TestVideoSessionNegotiatesPeerConnectionAndRequestsVideo(t *testing.T) {
 	if !ok {
 		t.Fatal("sess is not *Session")
 	}
-	if js.shouldNegotiatePC() {
-		t.Fatal("shouldNegotiatePC() = true before bytestream/video is configured")
+	if js.shouldNegotiatePC(false) {
+		t.Fatal("shouldNegotiatePC(false) = true before bytestream/video is configured")
 	}
 	if err := js.AddVideoTrack(nil); err != nil {
 		t.Fatalf("AddVideoTrack(nil): %v", err)
 	}
-	if !js.shouldNegotiatePC() {
-		t.Fatal("shouldNegotiatePC() = false for video session")
+	if !js.shouldNegotiatePC(false) {
+		t.Fatal("shouldNegotiatePC(false) = false for video session")
 	}
 	if !js.shouldRequestVideo() {
 		t.Fatal("shouldRequestVideo() = false for video session")
@@ -246,11 +247,11 @@ func TestSanitiseNick(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{"alice", "alice"},
+		{nameAlice, nameAlice},
 		{"Alice Smith", "Alice-Smith"},
 		{"Конрад Олег", "Konrad-Oleg"},
 		{"olcrtc-bot42", "olcrtc-bot42"},
-		{"  bob  ", "bob"},
+		{"  bob  ", nameBob},
 		{"$$$ %%%", ""},
 		{"verylongnicknamethatexceedslimit", "verylongnicknamet"[:16]},
 	}
@@ -291,17 +292,21 @@ func TestDeliverBridgeMessageMagicAndPeerLatch(t *testing.T) {
 	}
 	// Frame without magic is dropped.
 	js.deliverBridgeMessage(makeBridgeMessageFrom("peerA", map[string]any{rawFieldKey: bad}), true)
-	// Frame from a different sender after latch is dropped even with magic.
-	js.deliverBridgeMessage(makeBridgeMessageFrom("peerB", map[string]any{rawFieldKey: good}), true)
-	// Another frame from latched peer still flows.
+	// Frame from a different sender re-latches: any sender that passes
+	// the OLR magic check is by definition another olcrtc instance, and
+	// when a peer reconnects JVB assigns it a new endpoint id. We must
+	// adopt the new id so the peer's post-reconnect bytes flow.
 	beta := makeBridgeFrame(t, []byte("beta"))
-	js.deliverBridgeMessage(makeBridgeMessageFrom("peerA", map[string]any{rawFieldKey: beta}), true)
+	js.deliverBridgeMessage(makeBridgeMessageFrom("peerB", map[string]any{rawFieldKey: beta}), true)
 
 	if len(received) != 2 {
 		t.Fatalf("received frames = %d, want 2 (%q)", len(received), received)
 	}
 	if string(received[0]) != "alpha" || string(received[1]) != "beta" {
 		t.Fatalf("received = %q, want [alpha beta]", received)
+	}
+	if p := js.peerEndpoint.Load(); p == nil || *p != "peerB" {
+		t.Fatalf("peerEndpoint after re-latch = %v, want peerB", p)
 	}
 }
 
@@ -382,12 +387,74 @@ func TestReconnectEpochAnnounceWithZeroPeerEpochIsAccepted(t *testing.T) {
 	}
 }
 
-// TestDeliverBridgeMessagePeerEpochChangeAcceptsFreshPeer locks in the 1.9.8
-// design (149a521): a changed peer epoch is a deduplication marker, not a
-// reconnect trigger. When the peer emits a fresh epoch, acceptEpochFrame must
-// adopt it in place (peerEpoch updated) without signaling reconnect — the old
-// "request reconnect on epoch change" behavior caused a reconnect ping-pong.
-func TestDeliverBridgeMessagePeerEpochChangeAcceptsFreshPeer(t *testing.T) {
+func TestRequireTargetedPeerIgnoresBroadcastUntilConfirmed(t *testing.T) {
+	var received [][]byte
+	sess, err := New(context.Background(), engine.Config{
+		URL:                 testHost,
+		Extra:               map[string]string{credentialKeyRoom: testRoom},
+		RequireTargetedPeer: true,
+		OnData: func(b []byte) {
+			received = append(received, append([]byte(nil), b...))
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	js, ok := sess.(*Session)
+	if !ok {
+		t.Fatal("sess is not *Session")
+	}
+	js.localEpoch.Store(0x3333)
+
+	foreignBroadcast := makeBridgeFrameForEpoch(t, 0x2222, 0, []byte("CLIENT_HELLO"))
+	js.deliverBridgeMessage(makeBridgeMessageFrom("clientB", map[string]any{rawFieldKey: foreignBroadcast}), true)
+	if len(received) != 0 || js.peerEpoch.Load() != 0 {
+		t.Fatalf("broadcast changed targeted peer state: received=%q peerEpoch=0x%08x",
+			received, js.peerEpoch.Load())
+	}
+
+	targetedWelcome := makeBridgeFrameForEpoch(t, 0x1111, 0x3333, []byte("SERVER_WELCOME"))
+	js.deliverBridgeMessage(makeBridgeMessageFrom("server", map[string]any{rawFieldKey: targetedWelcome}), true)
+	if len(received) != 1 || string(received[0]) != "SERVER_WELCOME" {
+		t.Fatalf("received = %q, want targeted server welcome", received)
+	}
+	if js.peerEpoch.Load() != 0 || js.peerEndpoint.Load() != nil {
+		t.Fatal("targeted frame bound peer before authenticated welcome confirmation")
+	}
+	if err := js.ConfirmPeer("00001111"); err != nil {
+		t.Fatalf("ConfirmPeer() error = %v", err)
+	}
+	if got := js.peerEpoch.Load(); got != 0x1111 {
+		t.Fatalf("peerEpoch after confirmation = 0x%08x, want server epoch", got)
+	}
+
+	js.deliverBridgeMessage(makeBridgeMessageFrom("clientB", map[string]any{rawFieldKey: foreignBroadcast}), true)
+	if len(received) != 1 {
+		t.Fatalf("received after third-party broadcast = %q, want only server welcome", received)
+	}
+
+	more := makeBridgeFrameForEpoch(t, 0x1111, 0x3333, []byte("MORE"))
+	js.deliverBridgeMessage(makeBridgeMessageFrom("server", map[string]any{rawFieldKey: more}), true)
+	if len(received) != 2 || string(received[1]) != "MORE" {
+		t.Fatalf("received = %q, want server welcome + MORE", received)
+	}
+	if got := js.peerEndpoint.Load(); got == nil || *got != "server" {
+		t.Fatalf("peerEndpoint after confirmed frame = %v, want server", got)
+	}
+}
+
+// TestDeliverBridgeMessagePeerEpochChangeAcceptsFrameNoReconnect codifies
+// the post-fix behaviour: when a peer's epoch flips (because the peer
+// reconnected), we update our latch and ACCEPT the new frame instead of
+// dropping it AND NEVER trigger our own reconnect. The earlier
+// "reconnect on peer epoch change" semantics created a tight ping-pong
+// loop: peer reconnects → we drop their first frame and reconnect →
+// we publish a fresh epoch → peer drops our frame and reconnects → ...
+// Both sides ended up in a cycle with no data flowing, which is exactly
+// what the paired chaos stress test caught.
+func TestDeliverBridgeMessagePeerEpochChangeAcceptsFrameNoReconnect(t *testing.T) {
 	sess, err := New(context.Background(), engine.Config{
 		URL:   testHost,
 		Extra: map[string]string{credentialKeyRoom: testRoom},
@@ -410,19 +477,22 @@ func TestDeliverBridgeMessagePeerEpochChangeAcceptsFreshPeer(t *testing.T) {
 
 	first := makeBridgeFrameForEpoch(t, 0x1111, 0, []byte("first"))
 	js.deliverBridgeMessage(makeBridgeMessageFrom("peerA", map[string]any{rawFieldKey: first}), true)
-	changed := makeBridgeFrameForEpoch(t, 0x2222, 0x3333, nil)
+
+	// Peer reconnected, new epoch, and the very first post-reconnect
+	// frame carries the new payload.
+	changed := makeBridgeFrameForEpoch(t, 0x2222, 0x3333, []byte("after-peer-reconnect"))
 	js.deliverBridgeMessage(makeBridgeMessageFrom("peerA", map[string]any{rawFieldKey: changed}), true)
 
-	if len(received) != 1 || string(received[0]) != "first" {
-		t.Fatalf("received = %q, want only first payload", received)
+	if len(received) != 2 ||
+		string(received[0]) != "first" ||
+		string(received[1]) != "after-peer-reconnect" {
+		t.Fatalf("received = %q, want both payloads in order", received)
 	}
 	if got := js.peerEpoch.Load(); got != 0x2222 {
-		t.Fatalf("peerEpoch = 0x%08x, want fresh epoch 0x2222", got)
+		t.Fatalf("peerEpoch.Load() = 0x%X, want 0x2222 (latch must update)", got)
 	}
-	select {
-	case <-js.reconnectCh:
-		t.Fatal("peer epoch change must not request reconnect (1.9.8 design)")
-	case <-time.After(100 * time.Millisecond):
+	if js.Drain() {
+		t.Fatal("peer epoch change must NOT enqueue a self-reconnect (causes ping-pong loop)")
 	}
 }
 
@@ -447,9 +517,7 @@ func TestBridgeCloseRequestsReconnect(t *testing.T) {
 	if js.deliverBridgeMessage(j.BridgeMessage{}, false) {
 		t.Fatal("deliverBridgeMessage returned true on closed bridge")
 	}
-	select {
-	case <-js.reconnectCh:
-	case <-time.After(time.Second):
+	if !js.Drain() {
 		t.Fatal("bridge close did not request reconnect")
 	}
 	if ended != "" {
@@ -480,14 +548,5 @@ func TestBridgeCloseEndsWhenReconnectDisabled(t *testing.T) {
 	}
 	if ended != "jitsi bridge closed" {
 		t.Fatalf("ended = %q, want bridge close reason", ended)
-	}
-}
-
-func TestEngineRegistration(t *testing.T) {
-	if _, err := engine.New(context.Background(), "jitsi", engine.Config{
-		URL:   testHost,
-		Extra: map[string]string{credentialKeyRoom: testRoom},
-	}); err != nil {
-		t.Fatalf("engine.New(jitsi) = %v, want nil", err)
 	}
 }

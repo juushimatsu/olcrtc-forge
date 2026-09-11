@@ -133,6 +133,7 @@ internal object ProfileEditorDialog {
         }
         val roomId = field(fragment, form, R.string.profile_field_room_id, profile.roomId)
         val roomPassword = field(fragment, form, R.string.profile_field_room_password, profile.roomPassword.orEmpty(), secret = true)
+        val authToken = field(fragment, form, R.string.profile_field_auth_token, profile.authToken.orEmpty(), secret = true)
         val clientId = field(fragment, form, R.string.profile_field_client_id, profile.clientId)
         val key = field(fragment, form, R.string.profile_field_key, profile.keyHex, secret = true)
         val dns = field(fragment, form, R.string.profile_field_dns, profile.dnsServer.orEmpty())
@@ -186,6 +187,7 @@ internal object ProfileEditorDialog {
                     vp8Fps = speedPreset.selected.fps,
                     vp8BatchSize = speedPreset.selected.batchSize,
                     keepaliveIntervalSeconds = keepalive.intValue(0..3600, fragment.getString(R.string.profile_value_invalid)),
+                    authToken = authToken.optionalValue(),
                 ),
             )
         }

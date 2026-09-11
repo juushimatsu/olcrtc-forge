@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.5.2 — 2026-09-12
+
+- UI: darker theme palette (Abyss) — background, cards, accent and text colors updated for better contrast in low light.
+
 ## 1.5.1 — 2026-09-11
 
 - Rebrand: rebranded to `olcrtc-forge` with refreshed branding, new app icons, and repository links.

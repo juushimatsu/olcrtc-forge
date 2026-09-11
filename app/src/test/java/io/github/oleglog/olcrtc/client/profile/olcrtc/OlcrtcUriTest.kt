@@ -82,12 +82,12 @@ class OlcrtcUriTest {
     }
 
     @Test
-    fun rejectsRemovedAuthTokenParameter() {
-        // The wbstream auth token was removed from the client (commit 25302ec):
-        // links carrying a=/auth_token/auth.token are rejected as unknown.
-        assertThrows(IllegalArgumentException::class.java) {
-            OlcrtcUri.parse("olcrtc://wbstream@r/room?k=$key&t=vp8channel&c=client&a=token")
-        }
+    fun parsesAndSerializesAuthTokenParameter() {
+        val parsed = OlcrtcUri.parse("olcrtc://wbstream@r/room?k=$key&t=vp8channel&c=client&a=token")
+        assertEquals("token", parsed.authToken)
+        val serialized = OlcrtcUri.serialize(parsed)
+        assertTrue(serialized.contains("a=token"))
+        assertEquals(parsed, OlcrtcUri.parse(serialized))
     }
 
     @Test

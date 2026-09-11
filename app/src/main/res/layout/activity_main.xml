@@ -85,24 +85,6 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/navigation_statistics"
-                style="@style/Widget.OlcrtcClient.BottomNavigation.Item"
-                android:contentDescription="@string/navigation_statistics">
-
-                <FrameLayout
-                    style="@style/Widget.OlcrtcClient.BottomNavigation.Indicator">
-
-                    <ImageView
-                        style="@style/Widget.OlcrtcClient.BottomNavigation.Icon"
-                        android:src="@drawable/ic_nav_statistics_24" />
-                </FrameLayout>
-
-                <TextView
-                    style="@style/Widget.OlcrtcClient.BottomNavigation.Label"
-                    android:text="@string/navigation_statistics" />
-            </LinearLayout>
-
-            <LinearLayout
                 android:id="@+id/navigation_settings"
                 style="@style/Widget.OlcrtcClient.BottomNavigation.Item"
                 android:contentDescription="@string/navigation_settings">

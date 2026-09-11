@@ -4,45 +4,35 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/control"
-	"github.com/openlibrecommunity/olcrtc/internal/protect"
+	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/runtime"
+	"github.com/openlibrecommunity/olcrtc/internal/transport"
+	"github.com/openlibrecommunity/olcrtc/internal/tunnelcore"
 )
 
 const testBadDuration = "nope"
 
-func TestConfigureDefaultResolverProtectsDNSSocket(t *testing.T) {
-	listener, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+func TestRegisterDefaultsConcurrent(t *testing.T) {
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(RegisterDefaults)
 	}
-	defer func() { _ = listener.Close() }()
+	wg.Wait()
 
-	oldResolver := net.DefaultResolver
-	oldProtector := protect.Protector
-	t.Cleanup(func() {
-		net.DefaultResolver = oldResolver
-		protect.Protector = oldProtector
-	})
-
-	var calls atomic.Int32
-	protect.Protector = func(int) bool {
-		calls.Add(1)
-		return true
+	for _, name := range []string{"jitsi", "none", "telemost", "wbstream"} {
+		if !slices.Contains(enginebuiltin.Available(), name) {
+			t.Fatalf("provider %q is not registered", name)
+		}
 	}
-	configureDefaultResolver(listener.LocalAddr().String())
-
-	conn, err := net.DefaultResolver.Dial(context.Background(), "udp4", "ignored")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = conn.Close()
-	if calls.Load() != 1 {
-		t.Fatalf("Protector calls = %d, want 1", calls.Load())
+	if !slices.IsSorted(enginebuiltin.Available()) || !slices.IsSorted(transport.Available()) {
+		t.Fatal("registered names are not sorted")
 	}
 }
 
@@ -55,14 +45,14 @@ func TestApplyTransportDefaults(t *testing.T) {
 		{
 			name: "vp8",
 			in:   Config{Transport: transportVP8},
-			want: Config{Transport: transportVP8, VP8: VP8Config{FPS: 60, BatchSize: 64}},
+			want: Config{Transport: transportVP8, VP8: VP8Config{FPS: 30, BatchSize: 64}},
 		},
 		{
 			name: "sei",
 			in:   Config{Transport: transportSEI},
 			want: Config{
 				Transport: transportSEI,
-				SEI:       SEIConfig{FPS: 60, BatchSize: 64, FragmentSize: 900, AckTimeoutMS: 2000},
+				SEI:       SEIConfig{FPS: 30, BatchSize: 64, FragmentSize: 900, AckTimeoutMS: 2000},
 			},
 		},
 		{
@@ -71,8 +61,8 @@ func TestApplyTransportDefaults(t *testing.T) {
 			want: Config{
 				Transport: transportVideo,
 				Video: VideoConfig{
-					Width: 1920, Height: 1080, FPS: 30, Bitrate: "2M",
-					HW: defaultVideoHW, QRRecovery: "low", Codec: videoCodecQRCode,
+					Width: 1920, Height: 1080, FPS: 30,
+					QRRecovery: "low", Codec: videoCodecQRCode,
 				},
 			},
 		},
@@ -82,8 +72,8 @@ func TestApplyTransportDefaults(t *testing.T) {
 			want: Config{
 				Transport: transportVideo,
 				Video: VideoConfig{
-					Width: 1080, Height: 1080, FPS: 30, Bitrate: "2M",
-					HW: defaultVideoHW, QRRecovery: "low", Codec: videoCodecTile,
+					Width: 1080, Height: 1080, FPS: 30,
+					QRRecovery: "low", Codec: videoCodecTile,
 				},
 			},
 		},
@@ -128,16 +118,29 @@ func TestApplyLivenessDefaults(t *testing.T) {
 	}
 }
 
-func TestRunWithSessionRotationRestartsAfterMaxDuration(t *testing.T) {
-	oldRestartDelay := sessionRestartDelay
-	sessionRestartDelay = time.Millisecond
-	t.Cleanup(func() { sessionRestartDelay = oldRestartDelay })
+func TestResolverForDoesNotMutateDefaultResolver(t *testing.T) {
+	defaultResolver := net.DefaultResolver
+	custom := &net.Resolver{PreferGo: true}
 
+	resolver := tunnelcore.Resolver(nil, "8.8.8.8:53")
+	if net.DefaultResolver != defaultResolver {
+		t.Fatal("resolverFor() mutated net.DefaultResolver")
+	}
+	if resolver == nil || resolver == net.DefaultResolver {
+		t.Fatal("resolverFor() did not create a local resolver")
+	}
+
+	if tunnelcore.Resolver(custom, "8.8.8.8:53") != custom {
+		t.Fatal("resolverFor() did not prefer the supplied resolver")
+	}
+}
+
+func TestRunWithSessionRotationRestartsAfterMaxDuration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var calls atomic.Int32
-	err := runWithSessionRotation(ctx, 5*time.Millisecond, func(ctx context.Context) error {
+	err := runWithSessionRotation(ctx, 5*time.Millisecond, time.Millisecond, func(ctx context.Context) error {
 		if calls.Add(1) >= 2 {
 			cancel()
 			return nil
@@ -153,17 +156,43 @@ func TestRunWithSessionRotationRestartsAfterMaxDuration(t *testing.T) {
 	}
 }
 
-//nolint:maintidx // table-driven validation test naturally has many cases
+func TestPrepareRunConfigAppliesDefaultsThenValidates(t *testing.T) {
+	RegisterDefaults()
+	cfg, err := prepareRunConfig(Config{
+		Mode:      ModeSrv,
+		Transport: transportVP8,
+		Provider:  "telemost",
+		RoomID:    "room-1",
+		KeyHex:    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		DNSServer: "8.8.8.8:53",
+	})
+	if err != nil {
+		t.Fatalf("prepareRunConfig() error = %v", err)
+	}
+	if cfg.VP8.FPS != defaultVP8FPS || cfg.VP8.BatchSize != defaultVP8BatchSize {
+		t.Fatalf("VP8 defaults = %+v", cfg.VP8)
+	}
+	if cfg.LivenessInterval == "" || cfg.LivenessTimeout == "" || cfg.LivenessFailures == 0 {
+		t.Fatalf("liveness defaults = %+v", cfg)
+	}
+	if _, err := prepareRunConfig(Config{}); !errors.Is(err, ErrModeRequired) {
+		t.Fatalf("prepareRunConfig(empty) error = %v, want %v", err, ErrModeRequired)
+	}
+	if err := Run(context.Background(), Config{}); !errors.Is(err, ErrModeRequired) {
+		t.Fatalf("Run(empty) error = %v, want %v", err, ErrModeRequired)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	RegisterDefaults()
 
 	base := Config{
-		Mode:      modeSRV,
+		Mode:      ModeSrv,
 		Transport: "datachannel",
-		Auth:      "telemost",
+		Provider:  "telemost",
 		RoomID:    "room-1",
 		KeyHex:    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-		DNSServer: "8.8.8.8:53", //nolint:goconst // test literal, repetition is intentional
+		DNSServer: "8.8.8.8:53",
 	}
 
 	tests := []struct {
@@ -173,10 +202,19 @@ func TestValidate(t *testing.T) {
 	}{
 		{name: "valid baseline", cfg: base},
 		{
+			name: "custom resolver without dns server",
+			cfg: func() Config {
+				cfg := base
+				cfg.DNSServer = ""
+				cfg.Resolver = &net.Resolver{PreferGo: true}
+				return cfg
+			}(),
+		},
+		{
 			name: "cnc requires socks host and port",
 			cfg: func() Config {
 				cfg := base
-				cfg.Mode = modeCNC
+				cfg.Mode = ModeCnc
 				cfg.SOCKSHost = "127.0.0.1"
 				cfg.SOCKSPort = 1080
 				return cfg
@@ -192,13 +230,13 @@ func TestValidate(t *testing.T) {
 			want: ErrModeRequired,
 		},
 		{
-			name: "unsupported carrier",
+			name: "unsupported provider",
 			cfg: func() Config {
 				cfg := base
-				cfg.Auth = "unknown" //nolint:goconst // test literal, repetition is intentional
+				cfg.Provider = "unknown"
 				return cfg
 			}(),
-			want: ErrUnsupportedCarrier,
+			want: ErrUnsupportedProvider,
 		},
 		{
 			name: "unsupported transport",
@@ -237,10 +275,10 @@ func TestValidate(t *testing.T) {
 			want: ErrDNSServerRequired,
 		},
 		{
-			name: "videochannel requires dimensions and bitrate settings",
+			name: "videochannel requires dimensions and fps",
 			cfg: func() Config {
 				cfg := base
-				cfg.Transport = "videochannel" //nolint:goconst // test literal, repetition is intentional
+				cfg.Transport = "videochannel"
 				return cfg
 			}(),
 			want: ErrVideoWidthRequired,
@@ -253,8 +291,6 @@ func TestValidate(t *testing.T) {
 				cfg.Video.Width = 640
 				cfg.Video.Height = 480
 				cfg.Video.FPS = 30
-				cfg.Video.Bitrate = "1M"
-				cfg.Video.HW = defaultVideoHW
 				cfg.Video.Codec = "bogus"
 				return cfg
 			}(),
@@ -282,31 +318,6 @@ func TestValidate(t *testing.T) {
 			want: ErrVideoFPSRequired,
 		},
 		{
-			name: "videochannel requires bitrate",
-			cfg: func() Config {
-				cfg := base
-				cfg.Transport = "videochannel"
-				cfg.Video.Width = 640
-				cfg.Video.Height = 480
-				cfg.Video.FPS = 30
-				return cfg
-			}(),
-			want: ErrVideoBitrateRequired,
-		},
-		{
-			name: "videochannel requires hw",
-			cfg: func() Config {
-				cfg := base
-				cfg.Transport = "videochannel"
-				cfg.Video.Width = 640
-				cfg.Video.Height = 480
-				cfg.Video.FPS = 30
-				cfg.Video.Bitrate = "1M"
-				return cfg
-			}(),
-			want: ErrVideoHWRequired,
-		},
-		{
 			name: "tile codec requires square 1080 dimensions",
 			cfg: func() Config {
 				cfg := base
@@ -314,8 +325,6 @@ func TestValidate(t *testing.T) {
 				cfg.Video.Width = 640
 				cfg.Video.Height = 480
 				cfg.Video.FPS = 30
-				cfg.Video.Bitrate = "1M"
-				cfg.Video.HW = defaultVideoHW
 				cfg.Video.Codec = "tile"
 				return cfg
 			}(),
@@ -329,8 +338,6 @@ func TestValidate(t *testing.T) {
 				cfg.Video.Width = 1080
 				cfg.Video.Height = 1080
 				cfg.Video.FPS = 30
-				cfg.Video.Bitrate = "1M"
-				cfg.Video.HW = defaultVideoHW
 				cfg.Video.Codec = "tile"
 				return cfg
 			}(),
@@ -339,7 +346,7 @@ func TestValidate(t *testing.T) {
 			name: "vp8channel requires fps",
 			cfg: func() Config {
 				cfg := base
-				cfg.Transport = "vp8channel" //nolint:goconst // test literal, repetition is intentional
+				cfg.Transport = "vp8channel"
 				return cfg
 			}(),
 			want: ErrVP8FPSRequired,
@@ -368,7 +375,7 @@ func TestValidate(t *testing.T) {
 			name: "seichannel requires fps",
 			cfg: func() Config {
 				cfg := base
-				cfg.Transport = "seichannel" //nolint:goconst // test literal, repetition is intentional
+				cfg.Transport = "seichannel"
 				return cfg
 			}(),
 			want: ErrSEIFPSRequired,
@@ -422,7 +429,7 @@ func TestValidate(t *testing.T) {
 			name: "cnc requires socks host",
 			cfg: func() Config {
 				cfg := base
-				cfg.Mode = modeCNC
+				cfg.Mode = ModeCnc
 				cfg.SOCKSPort = 1080
 				return cfg
 			}(),
@@ -432,7 +439,7 @@ func TestValidate(t *testing.T) {
 			name: "cnc requires socks port",
 			cfg: func() Config {
 				cfg := base
-				cfg.Mode = modeCNC
+				cfg.Mode = ModeCnc
 				cfg.SOCKSHost = "127.0.0.1"
 				return cfg
 			}(),
@@ -442,7 +449,7 @@ func TestValidate(t *testing.T) {
 			name: "cnc rejects unauthenticated wildcard socks bind",
 			cfg: func() Config {
 				cfg := base
-				cfg.Mode = modeCNC
+				cfg.Mode = ModeCnc
 				cfg.SOCKSHost = "0.0.0.0"
 				cfg.SOCKSPort = 1080
 				return cfg
@@ -453,7 +460,7 @@ func TestValidate(t *testing.T) {
 			name: "cnc allows authenticated wildcard socks bind",
 			cfg: func() Config {
 				cfg := base
-				cfg.Mode = modeCNC
+				cfg.Mode = ModeCnc
 				cfg.SOCKSHost = "0.0.0.0"
 				cfg.SOCKSPort = 1080
 				cfg.SOCKSUser = "user"
@@ -465,7 +472,7 @@ func TestValidate(t *testing.T) {
 			name: "cnc allows localhost socks bind without auth",
 			cfg: func() Config {
 				cfg := base
-				cfg.Mode = modeCNC
+				cfg.Mode = ModeCnc
 				cfg.SOCKSHost = "localhost"
 				cfg.SOCKSPort = 1080
 				return cfg
@@ -598,7 +605,7 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-const testAuthWBStream = "wbstream"
+const testProviderWBStream = "wbstream"
 
 func TestValidateGen(t *testing.T) {
 	RegisterDefaults()
@@ -609,33 +616,40 @@ func TestValidateGen(t *testing.T) {
 		want error
 	}{
 		{
+			name: "custom resolver reaches provider validation",
+			cfg: Config{
+				Provider: testProviderWBStream, Resolver: &net.Resolver{PreferGo: true}, Amount: 3,
+			},
+			want: ErrUnsupportedProvider,
+		},
+		{
 			name: "wbstream room generation unsupported",
-			cfg:  Config{Auth: testAuthWBStream, DNSServer: "8.8.8.8:53", Amount: 3},
-			want: ErrUnsupportedCarrier,
+			cfg:  Config{Provider: testProviderWBStream, DNSServer: "8.8.8.8:53", Amount: 3},
+			want: ErrUnsupportedProvider,
 		},
 		{
-			name: "missing auth",
+			name: "missing provider",
 			cfg:  Config{DNSServer: "8.8.8.8:53", Amount: 1},
-			want: ErrAuthRequired,
+			want: ErrProviderRequired,
 		},
 		{
-			name: "unsupported auth",
-			cfg:  Config{Auth: "unknown", DNSServer: "8.8.8.8:53", Amount: 1},
-			want: ErrUnsupportedCarrier,
+			name: "unsupported provider",
+			cfg:  Config{Provider: "unknown", DNSServer: "8.8.8.8:53", Amount: 1},
+			want: ErrUnsupportedProvider,
 		},
 		{
 			name: "missing dns",
-			cfg:  Config{Auth: testAuthWBStream, Amount: 1},
+			cfg:  Config{Provider: testProviderWBStream, Amount: 1},
 			want: ErrDNSServerRequired,
 		},
 		{
 			name: "amount zero",
-			cfg:  Config{Auth: testAuthWBStream, DNSServer: "8.8.8.8:53", Amount: 0},
+			cfg:  Config{Provider: testProviderWBStream, DNSServer: "8.8.8.8:53", Amount: 0},
 			want: ErrAmountRequired,
 		},
 		{
 			name: "amount negative",
-			cfg:  Config{Auth: testAuthWBStream, DNSServer: "8.8.8.8:53", Amount: -1},
+			cfg:  Config{Provider: testProviderWBStream, DNSServer: "8.8.8.8:53", Amount: -1},
 			want: ErrAmountRequired,
 		},
 	}
@@ -656,11 +670,11 @@ func TestValidateGen(t *testing.T) {
 	}
 }
 
-func TestGenUnsupportedAuth(t *testing.T) {
+func TestGenUnsupportedProvider(t *testing.T) {
 	RegisterDefaults()
-	cfg := Config{Auth: "telemost", DNSServer: "8.8.8.8:53", Amount: 1}
+	cfg := Config{Provider: "telemost", DNSServer: "8.8.8.8:53", Amount: 1}
 	err := Gen(context.Background(), cfg, func(string) {})
-	if !errors.Is(err, ErrUnsupportedCarrier) {
-		t.Fatalf("Gen(telemost) error = %v, want ErrUnsupportedCarrier", err)
+	if !errors.Is(err, ErrUnsupportedProvider) {
+		t.Fatalf("Gen(telemost) error = %v, want ErrUnsupportedProvider", err)
 	}
 }

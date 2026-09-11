@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,7 +22,7 @@ import (
 // Local throughput soak: pump as much traffic as the selected transport
 // can sustain, locally, for an arbitrary duration.
 //
-// The tunnel is built on the in-memory carrier (no real provider, no
+// The tunnel is built on the in-memory provider (no real provider, no
 // network), so this measures the upper bound of what the
 // SOCKS+muxconn+transport stack can do on this machine. Useful to:
 //
@@ -37,42 +38,58 @@ import (
 //	    -olcrtc.local-soak-duration=12h \
 //	    -timeout=13h
 //
+// To pump every built-in transport sequentially in a single run pass
+// `-olcrtc.local-soak-transport=all` (or a comma-separated subset like
+// `datachannel,vp8channel`). Each transport gets its own subtest and its
+// own full -olcrtc.local-soak-duration window.
+//
 // The test is gated by -olcrtc.local-soak so it never runs in regular CI.
 
 var (
-	localSoakEnabled = flag.Bool( //nolint:gochecknoglobals // package-level state intentional
+	localSoakEnabled = flag.Bool(
 		"olcrtc.local-soak",
 		false,
 		"run TestLocalThroughputSoak (long-running local throughput pump)",
 	)
-	localSoakDuration = flag.Duration( //nolint:gochecknoglobals // package-level state intentional
+	localSoakDuration = flag.Duration(
 		"olcrtc.local-soak-duration",
 		30*time.Second,
 		"how long to keep pumping traffic (e.g. 12h, 30m, 90s)",
 	)
-	localSoakTransport = flag.String( //nolint:gochecknoglobals // package-level state intentional
+	localSoakTransport = flag.String(
 		"olcrtc.local-soak-transport",
 		transportData,
-		"transport to pump through: datachannel|videochannel|seichannel|vp8channel",
+		"transport(s) to pump through: datachannel|videochannel|seichannel|vp8channel, "+
+			"or 'all', or a comma-separated subset (e.g. datachannel,vp8channel)",
 	)
-	localSoakChunk = flag.Int( //nolint:gochecknoglobals // package-level state intentional
+	localSoakChunk = flag.Int(
 		"olcrtc.local-soak-chunk",
 		64*1024,
 		"write/read chunk size in bytes",
 	)
-	localSoakProgress = flag.Duration( //nolint:gochecknoglobals // package-level state intentional
+	localSoakProgress = flag.Duration(
 		"olcrtc.local-soak-progress",
 		30*time.Second,
 		"how often to log throughput progress lines",
 	)
-	localSoakVerify = flag.Bool( //nolint:gochecknoglobals // package-level state intentional
+	localSoakVerify = flag.Bool(
 		"olcrtc.local-soak-verify",
 		true,
 		"verify echoed bytes match the sent pattern (slower, but catches corruption)",
 	)
+	localSoakChaos = flag.Duration(
+		"olcrtc.local-soak-chaos",
+		0,
+		"if >0, trigger provider reconnect every this interval to simulate network disruption",
+	)
 )
 
-var errLocalSoakPayloadMismatch = errors.New("local soak payload mismatch")
+var (
+	errLocalSoakPayloadMismatch  = errors.New("local soak payload mismatch")
+	errLocalSoakTransportEmpty   = errors.New("empty transport value")
+	errLocalSoakTransportNone    = errors.New("no transports listed")
+	errLocalSoakTransportUnknown = errors.New("unknown transport")
+)
 
 // TestLocalThroughputSoak pumps a deterministic byte pattern through a
 // locally-built tunnel for -olcrtc.local-soak-duration and reports
@@ -90,18 +107,37 @@ func TestLocalThroughputSoak(t *testing.T) {
 		t.Fatalf("invalid -olcrtc.local-soak-chunk=%d", *localSoakChunk)
 	}
 
+	transports, err := resolveLocalSoakTransports(*localSoakTransport)
+	if err != nil {
+		t.Fatalf("invalid -olcrtc.local-soak-transport=%q: %v", *localSoakTransport, err)
+	}
+
+	for _, transportName := range transports {
+		t.Run(transportName, func(t *testing.T) {
+			runLocalSoakOnce(t, transportName)
+		})
+	}
+}
+
+// runLocalSoakOnce builds a fresh tunnel for transportName and pumps it
+// for one full -olcrtc.local-soak-duration window. Each subtest gets its
+// own provider, SOCKS port and goroutines via t.Cleanup, so transports
+// don't share state and a leak in one of them won't poison the next.
+func runLocalSoakOnce(t *testing.T, transportName string) {
+	t.Helper()
+
 	// Connection setup itself can be slow (first WebRTC handshake on
 	// some transports), so don't fold it into the duration budget.
 	const setupBudget = 30 * time.Second
 
-	t.Logf("[soak] transport=%s duration=%s chunk=%d verify=%t progress=%s",
-		*localSoakTransport, *localSoakDuration, *localSoakChunk,
-		*localSoakVerify, *localSoakProgress)
+	t.Logf("[soak] transport=%s duration=%s chunk=%d verify=%t progress=%s chaos=%s",
+		transportName, *localSoakDuration, *localSoakChunk,
+		*localSoakVerify, *localSoakProgress, *localSoakChaos)
 
-	rt := startLocalSoakTunnel(t, *localSoakTransport)
+	rt := startLocalSoakTunnel(t, transportName)
 	echoAddr := startEchoServer(t)
 
-	conn, err := connectViaSOCKSWithin(rt.socksAddr, echoAddr, setupBudget)
+	conn, err := connectViaSOCKSWithin(context.Background(), rt.socksAddr, echoAddr, setupBudget)
 	if err != nil {
 		t.Fatalf("connect via SOCKS: %v", err)
 	}
@@ -109,6 +145,10 @@ func TestLocalThroughputSoak(t *testing.T) {
 
 	pumpCtx, cancelPump := context.WithTimeout(context.Background(), *localSoakDuration)
 	defer cancelPump()
+
+	if *localSoakChaos > 0 && rt.room != nil {
+		go runLocalSoakChaos(pumpCtx, t, rt.room, *localSoakChaos)
+	}
 
 	stats := runLocalSoakPump(pumpCtx, t, conn, *localSoakChunk, *localSoakVerify, *localSoakProgress)
 
@@ -120,7 +160,7 @@ func TestLocalThroughputSoak(t *testing.T) {
 	}
 
 	t.Logf("[soak] DONE transport=%s elapsed=%s sent=%s recv=%s send=%s/s recv=%s/s",
-		*localSoakTransport,
+		transportName,
 		stats.elapsed.Round(time.Second),
 		humanBytes(stats.sent),
 		humanBytes(stats.recv),
@@ -129,12 +169,50 @@ func TestLocalThroughputSoak(t *testing.T) {
 	)
 }
 
+// resolveLocalSoakTransports turns the -olcrtc.local-soak-transport flag
+// value into an ordered, deduplicated list of built-in transport names.
+// Accepts "all" as a shorthand for builtInTransportNames(), or a
+// comma-separated subset (with whitespace tolerated around items).
+func resolveLocalSoakTransports(value string) ([]string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, errLocalSoakTransportEmpty
+	}
+	if strings.EqualFold(trimmed, "all") {
+		return builtInTransportNames(), nil
+	}
+
+	known := make(map[string]struct{}, 4)
+	for _, name := range builtInTransportNames() {
+		known[name] = struct{}{}
+	}
+
+	items := splitTestList(trimmed)
+	if len(items) == 0 {
+		return nil, errLocalSoakTransportNone
+	}
+
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, name := range items {
+		if _, ok := known[name]; !ok {
+			return nil, fmt.Errorf("%w: %q", errLocalSoakTransportUnknown, name)
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
 // startLocalSoakTunnel mirrors startTunnel but lets the caller pick the
 // transport (the original is hard-coded to datachannel).
 func startLocalSoakTunnel(t *testing.T, transportName string) *tunnelRuntime {
 	t.Helper()
 
-	carrierName, room := registerMemoryCarrier(t)
+	providerName, room := registerMemoryProvider(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	socksAddr := freeLocalAddr(ctx, t)
@@ -145,7 +223,7 @@ func startLocalSoakTunnel(t *testing.T, transportName string) *tunnelRuntime {
 		serverErr <- server.Run(ctx, server.Config{
 			Transport:        transportName,
 			TransportOptions: options,
-			Carrier:          carrierName,
+			Provider:         providerName,
 			RoomURL:          testRoom,
 			KeyHex:           testKeyHex,
 			DNSServer:        localDNSServer,
@@ -159,7 +237,7 @@ func startLocalSoakTunnel(t *testing.T, transportName string) *tunnelRuntime {
 		clientErr <- client.RunWithReady(ctx, client.Config{
 			Transport:        transportName,
 			TransportOptions: options,
-			Carrier:          carrierName,
+			Provider:         providerName,
 			RoomURL:          testRoom,
 			KeyHex:           testKeyHex,
 			DeviceID:         testClientDeviceID,
@@ -167,7 +245,10 @@ func startLocalSoakTunnel(t *testing.T, transportName string) *tunnelRuntime {
 			DNSServer:        localDNSServer,
 		}, func() { close(ready) })
 	}()
-	waitForReady(t, ready)
+	// Video transports go through ICE+DTLS+SRTP+smux before becoming
+	// ready, so reuse the longer setup budget the soak test allows for
+	// the SOCKS connect.
+	waitForReadyWithin(t, ready, 30*time.Second)
 
 	return &tunnelRuntime{
 		socksAddr: socksAddr,
@@ -335,7 +416,7 @@ func pumpReader(
 }
 
 // isExpectedShutdownErr filters errors that just mean "we asked the conn
-// to stop" — deadline expirations from our SetDeadline kick, EOF from the
+// to stop" - deadline expirations from our SetDeadline kick, EOF from the
 // peer half-closing, etc.
 func isExpectedShutdownErr(err error) bool {
 	if err == nil {
@@ -376,5 +457,26 @@ func humanBytes(n int64) string {
 		return fmt.Sprintf("%.2f KiB", float64(n)/float64(kib))
 	default:
 		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// runLocalSoakChaos periodically triggers provider reconnect to simulate
+// network disruption (WiFi flap, NAT rebind, etc). This reproduces the
+// scenario from issue #72 where a provider-driven reconnect leaves the
+// server and client in a desynchronized state.
+func runLocalSoakChaos(ctx context.Context, t *testing.T, room *memoryRoom, interval time.Duration) {
+	t.Helper()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	var count int
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			count++
+			t.Logf("[chaos] triggering provider reconnect #%d", count)
+			room.triggerReconnect()
+		}
 	}
 }

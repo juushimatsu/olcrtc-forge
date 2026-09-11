@@ -17,8 +17,6 @@ import (
 //
 // Invariant: every payload, once Push returns ResultDelivered, must match
 // the original bytes exactly.
-//
-//nolint:cyclop // stress fixture intentionally exercises many branches in one test
 func TestReassemblerStressShuffledFragments(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping stress test in -short mode")
@@ -55,7 +53,7 @@ func TestReassemblerStressShuffledFragments(t *testing.T) {
 				FragIdx:   uint16(idx),
 				FragTotal: uint16(len(raw)), //nolint:gosec // bounded
 				Payload:   frag,
-			})
+			}.WithPayloadCRC())
 			// 20% duplicate injection
 			if rng.Float64() < 0.20 {
 				allDrops = append(allDrops, pl.frags[len(pl.frags)-1])
@@ -101,7 +99,7 @@ func TestReassemblerStressShuffledFragments(t *testing.T) {
 		}
 	}
 	if dupCount == 0 {
-		t.Fatal("test injected duplicates but reassembler reported none — duplicate path not exercised")
+		t.Fatal("test injected duplicates but reassembler reported none - duplicate path not exercised")
 	}
 	t.Logf("delivered %d/%d messages, observed %d duplicates", len(delivered), messages, dupCount)
 }
@@ -141,7 +139,7 @@ func TestReassemblerConcurrentPushIsSafe(t *testing.T) {
 						FragIdx:   uint16(idx),      //nolint:gosec // bounded
 						FragTotal: uint16(len(raw)), //nolint:gosec // bounded
 						Payload:   raw[idx],
-					})
+					}.WithPayloadCRC())
 				}
 			}
 		})

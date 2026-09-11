@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -36,6 +37,8 @@ var (
 	profileProbeOlcrtc bool
 	profileProbeMu     sync.Mutex
 	olcrtcStartMu      sync.Mutex
+	olcrtcRuntime      *olcrtc.Runtime
+	olcrtcMu           sync.Mutex
 )
 
 type SocketProtector interface {
@@ -46,6 +49,17 @@ type LogWriter interface {
 	WriteLog(message string)
 }
 
+type logBridge struct {
+	w LogWriter
+}
+
+func (b *logBridge) Write(p []byte) (n int, err error) {
+	if b.w != nil {
+		b.w.WriteLog(string(p))
+	}
+	return len(p), nil
+}
+
 func init() {
 	_ = internet.RegisterDialerController(protectSocket)
 }
@@ -54,11 +68,17 @@ func SetProtector(value SocketProtector) {
 	mu.Lock()
 	protector = value
 	mu.Unlock()
-	olcrtc.SetProtector(value)
+	olcrtcMu.Lock()
+	if olcrtcRuntime != nil {
+		olcrtcRuntime.SetProtector(value)
+	}
+	olcrtcMu.Unlock()
 }
 
 func SetLogWriter(value LogWriter) {
-	olcrtc.SetLogWriter(value)
+	if value != nil {
+		log.SetOutput(&logBridge{w: value})
+	}
 }
 
 func StartXray(assetDirectory string, configJSON string) error {
@@ -211,12 +231,12 @@ func StartProfileProbeOlcrtc(
 	compatibilityMode string,
 	roomID string,
 	clientID string,
+	authToken string,
 	keyHex string,
 	dnsServer string,
 	vp8FPS int,
 	vp8BatchSize int,
 	keepaliveSeconds int,
-	udpEnabled bool,
 	socksPort int,
 ) error {
 	profileProbeMu.Lock()
@@ -227,12 +247,12 @@ func StartProfileProbeOlcrtc(
 		compatibilityMode,
 		roomID,
 		clientID,
+		authToken,
 		keyHex,
 		dnsServer,
 		vp8FPS,
 		vp8BatchSize,
 		keepaliveSeconds,
-		udpEnabled,
 		socksPort,
 	); err != nil {
 		return err
@@ -253,7 +273,7 @@ func StopProfileProbe() error {
 	profileProbeOlcrtc = false
 	mu.Unlock()
 	if stopOlcrtc {
-		olcrtc.Stop()
+		StopOlcrtc()
 	}
 	if instance != nil {
 		if err := instance.Close(); err != nil {
@@ -333,49 +353,81 @@ func StartOlcrtc(
 	compatibilityMode string,
 	roomID string,
 	clientID string,
+	authToken string,
 	keyHex string,
 	dnsServer string,
 	vp8FPS int,
 	vp8BatchSize int,
 	keepaliveSeconds int,
-	udpEnabled bool,
 	socksPort int,
 ) error {
 	olcrtcStartMu.Lock()
 	defer olcrtcStartMu.Unlock()
 
-	if olcrtc.IsRunning() {
+	olcrtcMu.Lock()
+	if olcrtcRuntime != nil && olcrtcRuntime.IsRunning() {
+		olcrtcMu.Unlock()
 		return errAlreadyRunning
 	}
+	r := olcrtc.New()
+	olcrtcRuntime = r
+	olcrtcMu.Unlock()
 
-	olcrtc.SetProviders()
+	log.Printf("mobilecore: StartOlcrtc provider=%s transport=%s compatibilityMode=%q room=%s hasAuthToken=%v",
+		provider, transport, compatibilityMode, roomID, strings.TrimSpace(authToken) != "")
+
 	if err := registerVP8Transport(compatibilityMode); err != nil {
 		return err
 	}
-	olcrtc.SetDNS(dnsServer)
-	olcrtc.SetVP8Options(vp8FPS, vp8BatchSize)
-	olcrtc.SetLivenessOptions(keepaliveSeconds*1000, 0, 0)
-	olcrtc.SetUDPEnabled(udpEnabled)
-	if err := olcrtc.StartWithTransport(
-		provider,
-		transport,
-		roomID,
-		clientID,
-		keyHex,
-		socksPort,
-		"",
-		"",
-	); err != nil {
+	if err := r.SetProvider(provider); err != nil {
+		return err
+	}
+	if err := r.SetTransport(transport); err != nil {
+		return err
+	}
+	if err := r.SetRoom(roomID); err != nil {
+		return err
+	}
+	r.SetDeviceID(clientID)
+	if err := r.SetKey(keyHex); err != nil {
+		return err
+	}
+	if err := r.SetDNS(dnsServer); err != nil {
+		return err
+	}
+	_ = r.SetVP8Options(vp8FPS, vp8BatchSize)
+	_ = r.SetLivenessOptions(keepaliveSeconds*1000, 0, 0)
+	authToken = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(authToken), "Bearer "))
+	if authToken != "" {
+		r.SetProviderToken(authToken)
+	}
+	if err := r.SetSocksPort(socksPort); err != nil {
+		return err
+	}
+	r.SetDebug(true)
+
+	mu.Lock()
+	prot := protector
+	mu.Unlock()
+	if prot != nil {
+		r.SetProtector(prot)
+	}
+
+	if err := r.Start(); err != nil {
 		return fmt.Errorf("start olcRTC: %w", err)
 	}
 	return nil
 }
 
 func registerVP8Transport(compatibilityMode string) error {
-	switch strings.ToLower(strings.TrimSpace(compatibilityMode)) {
+	mode := strings.ToLower(strings.TrimSpace(compatibilityMode))
+	log.Printf("mobilecore: registerVP8Transport requested mode=%q", compatibilityMode)
+	switch mode {
 	case "", "current":
+		log.Printf("mobilecore: using currentvp8channel (36-byte v3 wire format)")
 		transportregistry.Register("vp8channel", currentvp8channel.New)
 	case "legacy":
+		log.Printf("mobilecore: using legacyvp8channel (32-byte legacy wire format)")
 		transportregistry.Register("vp8channel", legacyvp8channel.New)
 	default:
 		return fmt.Errorf("unsupported olcRTC compatibility mode: %q", compatibilityMode)
@@ -384,20 +436,32 @@ func registerVP8Transport(compatibilityMode string) error {
 }
 
 func WaitOlcrtcReady(timeoutMillis int) error {
-	// WaitReady preserves errors from runs that finish before this call;
-	// an IsRunning precheck would discard those errors.
-	if err := olcrtc.WaitReady(timeoutMillis); err != nil {
+	olcrtcMu.Lock()
+	r := olcrtcRuntime
+	olcrtcMu.Unlock()
+	if r == nil {
+		return errNotRunning
+	}
+	if err := r.WaitReady(timeoutMillis); err != nil {
 		return fmt.Errorf("wait for olcRTC: %w", err)
 	}
 	return nil
 }
 
 func StopOlcrtc() {
-	olcrtc.Stop()
+	olcrtcMu.Lock()
+	r := olcrtcRuntime
+	olcrtcMu.Unlock()
+	if r != nil {
+		_ = r.Stop(5000)
+	}
 }
 
 func IsOlcrtcRunning() bool {
-	return olcrtc.IsRunning()
+	olcrtcMu.Lock()
+	r := olcrtcRuntime
+	olcrtcMu.Unlock()
+	return r != nil && r.IsRunning()
 }
 
 func TrafficBytesUp() int64 {
@@ -444,7 +508,7 @@ func IsFatalError(message string) bool {
 }
 
 func StopAll() error {
-	olcrtc.Stop()
+	StopOlcrtc()
 	return StopXray()
 }
 

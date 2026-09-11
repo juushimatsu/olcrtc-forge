@@ -513,6 +513,7 @@ internal class ProfileRepository(
                     vp8Fps = value.getInt("vp8Fps"),
                     vp8BatchSize = value.getInt("vp8BatchSize"),
                     keepaliveIntervalSeconds = value.getInt("keepaliveIntervalSeconds"),
+                    authToken = value.stringOrNull("authToken"),
                 ),
             )
         } else {
@@ -535,6 +536,7 @@ internal class ProfileRepository(
         .put("vp8Fps", vp8Fps)
         .put("vp8BatchSize", vp8BatchSize)
         .put("keepaliveIntervalSeconds", keepaliveIntervalSeconds)
+        .put("authToken", authToken)
         .toString()
 
     private fun StandardProfile.toJson(): String = JSONObject()
@@ -582,7 +584,7 @@ internal class ProfileRepository(
         transport = transport.value,
         compatibilityMode = compatibilityMode.value,
         roomId = roomId,
-        roomPassword = roomPassword?.let(secrets::encrypt),
+        roomPassword = (if (provider == OlcrtcProfile.Provider.WBSTREAM) authToken else roomPassword)?.let(secrets::encrypt),
         clientId = clientId,
         keyHex = secrets.encrypt(keyHex),
         dnsServer = dnsServer.orEmpty(),
@@ -591,20 +593,25 @@ internal class ProfileRepository(
         keepaliveIntervalSeconds = keepaliveIntervalSeconds,
     )
 
-    private fun OlcrtcProfileEntity.toProfile() = OlcrtcProfile(
-        name = name,
-        provider = OlcrtcProfile.Provider.parse(provider),
-        transport = OlcrtcProfile.Transport.parse(transport),
-        compatibilityMode = OlcrtcProfile.CompatibilityMode.parse(compatibilityMode),
-        roomId = roomId,
-        roomPassword = roomPassword?.let(secrets::decrypt),
-        clientId = clientId,
-        keyHex = secrets.decrypt(keyHex),
-        dnsServer = dnsServer.takeIf(String::isNotBlank),
-        vp8Fps = vp8Fps,
-        vp8BatchSize = vp8BatchSize,
-        keepaliveIntervalSeconds = keepaliveIntervalSeconds,
-    )
+    private fun OlcrtcProfileEntity.toProfile(): OlcrtcProfile {
+        val parsedProvider = OlcrtcProfile.Provider.parse(provider)
+        val decryptedSecret = roomPassword?.let(secrets::decrypt)
+        return OlcrtcProfile(
+            name = name,
+            provider = parsedProvider,
+            transport = OlcrtcProfile.Transport.parse(transport),
+            compatibilityMode = OlcrtcProfile.CompatibilityMode.parse(compatibilityMode),
+            roomId = roomId,
+            roomPassword = decryptedSecret.takeIf { parsedProvider != OlcrtcProfile.Provider.WBSTREAM },
+            clientId = clientId,
+            keyHex = secrets.decrypt(keyHex),
+            dnsServer = dnsServer.takeIf(String::isNotBlank),
+            vp8Fps = vp8Fps,
+            vp8BatchSize = vp8BatchSize,
+            keepaliveIntervalSeconds = keepaliveIntervalSeconds,
+            authToken = decryptedSecret.takeIf { parsedProvider == OlcrtcProfile.Provider.WBSTREAM },
+        )
+    }
 
     private fun StandardProfile.toEntity(id: Long = 0) = StandardProfileEntity(
         id = id,

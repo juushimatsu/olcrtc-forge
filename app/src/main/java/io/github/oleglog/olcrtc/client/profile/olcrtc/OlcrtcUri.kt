@@ -16,6 +16,7 @@ object OlcrtcUri {
         "dns", "d",
         "room_password", "rp",
         "keepalive", "ka",
+        "auth_token", "auth.token", "a",
     )
 
     fun parse(raw: String): OlcrtcProfile {
@@ -66,6 +67,7 @@ object OlcrtcUri {
                 "keepalive",
                 "ka",
             ),
+            authToken = parameter(params, "auth_token", "auth.token", "a"),
         )
     }
 
@@ -79,6 +81,7 @@ object OlcrtcUri {
                 add("b=${profile.vp8BatchSize}")
             }
             add("c=${encode(profile.clientId)}")
+            profile.authToken?.takeIf(String::isNotEmpty)?.let { add("a=${encode(it)}") }
             profile.roomPassword?.takeIf(String::isNotEmpty)?.let { add("rp=${encode(it)}") }
             profile.dnsServer?.let { add("d=${encode(it)}") }
             add("ka=${profile.keepaliveIntervalSeconds}")

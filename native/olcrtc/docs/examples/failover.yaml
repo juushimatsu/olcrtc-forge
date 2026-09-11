@@ -1,0 +1,47 @@
+# Failover config
+# Use the same profile order on both server and client.
+
+mode: srv # role: srv (server) or cnc (client)
+
+crypto:
+  key_file: "./olcrtc.key" # path to file holding the 32-byte hex key
+
+net:
+  dns: "8.8.8.8:53" # dns used to resolve names
+
+liveness:
+  interval: 10s # how often to send liveness checks
+  timeout: 15s # wait time for a liveness reply
+  failures: 4 # consecutive failures before the link is considered dead
+
+# Optional scheduled rebuild for each active profile.
+# lifecycle:
+#   max_session_duration: 6h
+
+# Optional limit / pacing for encrypted wire messages.
+# traffic:
+#   max_payload_size: 4096
+#   min_delay: 5ms
+#   max_delay: 30ms
+
+
+profiles: # ordered list of link profiles, tried top to bottom
+  - name: wb-vp8 # profile label
+    auth:
+      provider: wbstream # call service provider used for signaling
+    room:
+      id: "REPLACE_WITH_WB_ROOM_ID" # room id
+    net:
+      transport: vp8channel # transport for this profile
+
+  - name: jitsi-datachannel # profile label
+    auth:
+      provider: jitsi # call service provider used for signaling
+    room:
+      id: "https://meet.example.org/REPLACE_WITH_ROOM_NAME" # room name / URL
+    net:
+      transport: datachannel # transport for this profile
+
+failover:
+  retry_delay: 2s # wait between profile switch attempts
+  max_cycles: 0 # max full cycles over profiles (0 = unlimited)

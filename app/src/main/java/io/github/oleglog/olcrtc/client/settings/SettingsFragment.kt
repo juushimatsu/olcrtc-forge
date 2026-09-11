@@ -63,11 +63,6 @@ class SettingsFragment : Fragment() {
     private val settings by lazy { RoutingSettings.open(requireContext().applicationContext) }
     private val diagnostics by lazy { DiagnosticsLogStore.open(requireContext().applicationContext) }
     private val profiles by lazy { ProfileRepository.open(requireContext().applicationContext) }
-    private val appearanceSettings = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) requireActivity().recreate()
-    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, state: Bundle?): View {
         _binding = FragmentSettingsBinding.inflate(inflater, container, false)
@@ -78,9 +73,6 @@ class SettingsFragment : Fragment() {
         val binding = requireNotNull(_binding)
         binding.settingsRoutingRow.setOnClickListener { showRoutingSettings() }
         binding.settingsAppsRow.setOnClickListener { selectApps() }
-        binding.settingsAppearanceRow.setOnClickListener {
-            appearanceSettings.launch(Intent(requireContext(), AppearanceSettingsActivity::class.java))
-        }
         binding.settingsDnsRow.setOnClickListener { showDnsSettings() }
         binding.settingsSystemRow.setOnClickListener {
             showActions(
@@ -97,7 +89,6 @@ class SettingsFragment : Fragment() {
         binding.settingsUpdatesRow.setOnClickListener { showUpdatesSettings() }
         binding.settingsDiagnosticsRow.setOnClickListener { showDiagnosticsMenu() }
         binding.settingsAboutRow.setOnClickListener { showAbout() }
-        binding.settingsAppearanceSummary.setText(R.string.settings_appearance_summary)
         binding.settingsSystemSummary.setText(R.string.settings_system_row_summary)
         binding.settingsUpdatesSummary.text = getString(R.string.settings_version_summary, BuildConfig.VERSION_NAME)
         binding.settingsDiagnosticsSummary.setText(R.string.settings_diagnostics_row_summary)

@@ -7,7 +7,7 @@
 // expressed via the RoomCreator interface.
 //
 // The "none" auth provider passes a caller-supplied URL+Token through
-// unchanged — this is the path that sing-box and other downstream consumers
+// unchanged - this is the path that sing-box and other downstream consumers
 // take when they want to use olcrtc as a generic LiveKit/Goolom/Jitsi
 // transport without any service-specific behaviour baked in.
 package auth
@@ -15,13 +15,14 @@ package auth
 import (
 	"context"
 	"errors"
+	"net"
+	"slices"
+	"sync"
 )
 
 var (
-	// ErrAuthNotFound is returned when a requested auth provider is not registered.
-	ErrAuthNotFound = errors.New("auth provider not found")
-	// ErrRoomCreationUnsupported is returned when an auth provider cannot create rooms.
-	ErrRoomCreationUnsupported = errors.New("auth provider does not support room creation")
+	// ErrProviderNotFound is returned when a requested provider is not registered.
+	ErrProviderNotFound = errors.New("provider not found")
 	// ErrRoomIDRequired is returned when an auth flow needs an existing room ID and none was supplied.
 	ErrRoomIDRequired = errors.New("room ID required")
 )
@@ -30,7 +31,7 @@ var (
 //
 // URL is the signaling endpoint (e.g. wss://livekit.example/). Token is the
 // access token (LiveKit JWT, Goolom session credential, etc). Extra is for
-// engine-specific bits that don't fit the common shape — engines should not
+// engine-specific bits that don't fit the common shape - engines should not
 // rely on it being populated unless their paired auth provider documents it.
 type Credentials struct {
 	URL   string
@@ -45,13 +46,15 @@ type Config struct {
 	RoomURL string
 	// Name is the display name to register with.
 	Name string
+	// Token is an optional pre-issued account token. When set, a provider may
+	// skip its anonymous/guest auth flow and act as that account instead.
+	// Empty means the provider falls back to its default (guest) flow.
+	Token string
 	// DNSServer / ProxyAddr / ProxyPort are network knobs for outbound HTTP.
 	DNSServer string
+	Resolver  *net.Resolver
 	ProxyAddr string
 	ProxyPort int
-	// Insecure disables TLS for the signaling connection (ws:// instead of wss://).
-	// Used when connecting to self-hosted Jitsi instances without TLS.
-	Insecure bool
 }
 
 // Provider produces engine credentials.
@@ -59,7 +62,7 @@ type Provider interface {
 	// Engine reports which engine this auth provider feeds.
 	Engine() string
 	// DefaultServiceURL returns the well-known service URL for this provider
-	// (e.g. "https://stream.wb.ru"). Returns "" if no default exists — in that
+	// (e.g. "https://stream.wb.ru"). Returns "" if no default exists - in that
 	// case the caller must supply -url explicitly.
 	DefaultServiceURL() string
 	// Issue obtains credentials for the given room.
@@ -72,27 +75,58 @@ type RoomCreator interface {
 	CreateRoom(ctx context.Context, cfg Config) (roomID string, err error)
 }
 
-var registry = make(map[string]Provider) //nolint:gochecknoglobals // package-level state intentional
+//nolint:gochecknoglobals // process-wide auth provider registry
+var (
+	registryMu sync.RWMutex
+	registry   = make(map[string]Provider)
+)
 
 // Register adds an auth provider to the registry.
 func Register(name string, p Provider) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
 	registry[name] = p
 }
 
 // Get returns a registered auth provider by name.
 func Get(name string) (Provider, error) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
 	p, ok := registry[name]
 	if !ok {
-		return nil, ErrAuthNotFound
+		return nil, ErrProviderNotFound
 	}
 	return p, nil
 }
 
 // Available returns the list of registered auth provider names.
 func Available() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
 	names := make([]string, 0, len(registry))
 	for name := range registry {
 		names = append(names, name)
 	}
+	slices.Sort(names)
+	return names
+}
+
+// RoomCreators returns the sorted names of registered providers that
+// implement RoomCreator, i.e. the ones `-mode gen` can drive. The list is
+// empty when no provider can create rooms.
+func RoomCreators() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	names := make([]string, 0, len(registry))
+	for name, p := range registry {
+		if _, ok := p.(RoomCreator); ok {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
 	return names
 }

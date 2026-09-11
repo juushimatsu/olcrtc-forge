@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.26.x"
+  GOLANGCI_LINT_VERSION: "v2.12.2"
+
+jobs:
+  hygiene:
+    name: Hygiene (fmt, tidy, vet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go mod tidy
+        run: go mod tidy -diff
+
+      - name: go vet
+        run: go vet ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=5m
+
+  test:
+    name: Test (-race, coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run tests
+        run: go test -count=1 -race -timeout 15m -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  real-e2e:
+    name: Real E2E (Providers x Transports)
+    # Talks to third-party services, but runs on every push and PR so
+    # breakage is caught immediately instead of waiting for a schedule.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run real provider e2e matrix
+        run: |
+          go test -count=1 -v ./internal/e2e \
+            -olcrtc.real-providers=telemost,wbstream,jitsi \
+            -run '^TestRealProviderTransportMatrix$' \
+            -olcrtc.real-e2e
+
+  build-cli:
+    name: Build CLI (Binaries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+
+      - name: Build CLI (Cross)
+        run: mage cross
+
+      - name: Upload CLI Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: olcrtc-cli-binaries
+          path: build/
+
+  build-android:
+    name: Build Android (AAR)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+
+      - name: Build Mobile
+        run: mage mobile
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: olcrtc-android
+          path: build/olcrtc.aar
+
+  build-cgo:
+    name: Build c-shared library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+
+      - name: Build c-shared
+        run: mage cgo
+
+      - name: Upload c-shared artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: olcrtc-cshared
+          path: build/libolcrtc.*

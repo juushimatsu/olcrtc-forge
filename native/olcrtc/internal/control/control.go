@@ -6,8 +6,6 @@
 //
 // Wire format matches the handshake framing: a 4-byte big-endian length
 // followed by a JSON message.
-//
-//nolint:tagliatelle // JSON keys are the stable wire protocol schema.
 package control
 
 import (
@@ -33,6 +31,13 @@ const (
 	// the ping shares the bulk smux/KCP stream: under a heavy transfer the
 	// ping byte can be head-of-line blocked behind queued data for several
 	// seconds, which is liveness-OK, not a dead link.
+	//
+	// Conservative default: a conventional provider (jitsi/datachannel) that
+	// goes silent this long is genuinely dead and should reconnect promptly.
+	// Video-paced transports with isolated control planes (vp8channel) need a
+	// longer window because KCP batching + frame pacing can delay control
+	// packets under load (issue #95); that relaxed window is applied per
+	// transport via runtime.LivenessTimeout, not by widening this default.
 	DefaultTimeout = 15 * time.Second
 	// DefaultFailures is the default number of consecutive missed pongs before
 	// the stream is marked unhealthy.

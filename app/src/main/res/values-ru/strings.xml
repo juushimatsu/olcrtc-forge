@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">olcrtc-forge</string>
+    <string name="app_name">OLCRTC Forge</string>
     <string name="navigation_connection">VPN</string>
     <string name="navigation_profiles">Подписки</string>
     <string name="navigation_statistics">Трафик</string>
@@ -123,12 +123,6 @@
     <string name="failover_auto_subtitle">Пробовать другие подключения при сбое</string>
     <string name="failover_enabled">Авто-переключение включено: после 2 неудачных попыток приложение попробует другие подключения</string>
     <string name="failover_disabled">Авто-переключение выключено: приложение будет повторять то же подключение</string>
-    <string name="udp_relay">UDP-реле: звонки и игры (экспериментально)</string>
-    <string name="udp_relay_title">UDP-реле</string>
-    <string name="udp_relay_subtitle">Для голосовых звонков и онлайн-игр</string>
-    <string name="udp_relay_enabled">UDP-реле включено: для голосовых звонков и онлайн-игр</string>
-    <string name="udp_relay_disabled">UDP-реле выключено: звонки и трафик приложений идут через TCP</string>
-    <string name="udp_relay_description">Направляет UDP-трафик приложений через туннель. Необходимо для голосовых звонков (Discord, Telegram) и онлайн-игр. Не влияет на веб-серфинг и Speedtest.</string>
     <string name="profile_field_speed_preset">Пресет скорости</string>
     <string name="profile_delete_title">Удалить профиль?</string>
     <string name="profile_delete_message">Удалить %1$s?</string>
@@ -251,10 +245,10 @@
     <string name="settings_update_no_asset">Релиз найден, но совместимого APK-файла нет</string>
     <string name="settings_system_screen_unavailable">Эти системные настройки недоступны на устройстве</string>
     <string name="battery_optimization_prompt_title">Повысить стабильность VPN в фоне</string>
-    <string name="battery_optimization_prompt_message">Android может приостанавливать VPN при выключенном экране. Отключите экономию заряда для olcrtc-forge, чтобы фоновая работа и переподключения были надёжнее.</string>
+    <string name="battery_optimization_prompt_message">Android может приостанавливать VPN при выключенном экране. Отключите экономию заряда для OLCRTC Forge, чтобы фоновая работа и переподключения были надёжнее.</string>
     <string name="battery_optimization_prompt_never">Больше не показывать</string>
     <string name="battery_optimization_prompt_open">Открыть настройки</string>
-    <string name="battery_optimization_already_disabled">Экономия заряда уже отключена для olcrtc-forge</string>
+    <string name="battery_optimization_already_disabled">Экономия заряда уже отключена для OLCRTC Forge</string>
     <string name="settings_about_message">Версия: %1$s\nРазработчик: %2$s</string>
     <string name="settings_about_repository">Оригинальный репозиторий на GitHub</string>
     <string name="settings_about_telegram">Telegram разработчика</string>
@@ -308,6 +302,10 @@
     <string name="traffic_zero">0 Б</string>
     <string name="traffic_zero_rate">0 Б/с</string>
     <string name="traffic_rate_format">%1$s/с</string>
+    <string name="traffic_download_format">↓ %1$s/с</string>
+    <string name="traffic_upload_format">↑ %1$s/с</string>
+    <string name="traffic_session_format">За сессию: %1$s</string>
+    <string name="traffic_session_detailed_format">За сессию: %1$s (↓ %2$s  ↑ %3$s)</string>
     <string name="settings_diagnostics_description">Локальный журнал работы без паролей и ключей шифрования. Безопасно для отправки разработчикам при сбоях.</string>
     <string name="settings_view_diagnostics">Просмотреть журнал работы</string>
     <string name="settings_copy_diagnostics">Скопировать журнал</string>

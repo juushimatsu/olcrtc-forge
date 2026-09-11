@@ -203,11 +203,7 @@ func newChallenge() (string, error) {
 // Server performs the server side of the handshake. It reads CLIENT_HELLO,
 // invokes auth, and writes the corresponding WELCOME or REJECT. On success it
 // returns the parsed Hello and the session ID produced by auth.
-func Server(rw io.ReadWriter, auth AuthFunc, peerIDs ...string) (Hello, string, error) {
-	peerID := ""
-	if len(peerIDs) > 0 {
-		peerID = peerIDs[0]
-	}
+func Server(rw io.ReadWriter, auth AuthFunc, peerID string) (Hello, string, error) {
 	raw, err := readFrame(rw)
 	if err != nil {
 		return Hello{}, "", fmt.Errorf("read hello: %w", err)

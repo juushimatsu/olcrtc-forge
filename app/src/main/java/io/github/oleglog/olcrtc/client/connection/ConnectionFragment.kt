@@ -99,8 +99,6 @@ class ConnectionFragment : Fragment() {
     @Volatile private var defaultNetwork: Network? = null
     private var profilesLoaded = false
     private var currentSessionStartedAt: Long? = null
-    private var todayBytesUp = 0L
-    private var todayBytesDown = 0L
     @Volatile private var dashboardLoadInFlight = false
     private val dashboardTicker = object : Runnable {
         override fun run() {
@@ -163,19 +161,6 @@ class ConnectionFragment : Fragment() {
             binding.autoFailover.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             storage.execute {
                 val saved = runCatching { settings.setAutoFailoverBlocking(checked) }
-                activity?.runOnUiThread {
-                    if (_binding == null) return@runOnUiThread
-                    saved.onFailure { showStatus(it.message) }
-                }
-            }
-        }
-        // UDP relay over the olcRTC carrier (server-v1.9.76+). Default off;
-        // takes effect on the next connect, same as auto failover.
-        binding.udpRelay.isChecked = settings.getUdpRelay()
-        binding.udpRelay.setOnCheckedChangeListener { _, checked ->
-            binding.udpRelay.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-            storage.execute {
-                val saved = runCatching { settings.setUdpRelayBlocking(checked) }
                 activity?.runOnUiThread {
                     if (_binding == null) return@runOnUiThread
                     saved.onFailure { showStatus(it.message) }
@@ -587,7 +572,6 @@ class ConnectionFragment : Fragment() {
             requireContext().applicationContext,
             settings.getDnsServer(),
             profileProbeWorkers,
-            udpRelay = settings.getUdpRelay(),
         )
         activeProfileProbe = probe
         profileProbeInProgress = true
@@ -872,7 +856,6 @@ class ConnectionFragment : Fragment() {
             selectedSubscriptionProfileId != null && selectedSubscriptionProfileId != connectedSubscriptionProfileId
 
     private fun animationsEnabled(): Boolean {
-        if (!activityHost.currentAppearance().motionEnabled) return false
         val resolver = requireContext().contentResolver
         val scale = android.provider.Settings.Global.getFloat(
             resolver,
@@ -890,7 +873,7 @@ class ConnectionFragment : Fragment() {
         val halo = binding.connectionHalo
         pulseAnimator?.cancel()
         pulseAnimator = null
-        val intensity = activityHost.currentAppearance().glowIntensity
+        val intensity = 60
         val targetAlpha = connectionGlowAlpha(intensity, applyingPulse)
         if (!applyingPulse || !animationsEnabled() || targetAlpha == 0f) {
             halo.alpha = targetAlpha
@@ -1032,8 +1015,6 @@ class ConnectionFragment : Fragment() {
                 if (_binding == null) return@runOnUiThread
                 result.onSuccess { summary ->
                     currentSessionStartedAt = summary.current?.startedAt
-                    todayBytesUp = summary.today.bytesUp
-                    todayBytesDown = summary.today.bytesDown
                     updateDashboard()
                 }
             }
@@ -1048,9 +1029,14 @@ class ConnectionFragment : Fragment() {
         val liveDown = if (sessionActive) traffic?.get(1)?.coerceAtLeast(0) ?: 0 else 0
         val upSpeed = if (currentState == VpnState.CONNECTED) traffic?.get(2)?.coerceAtLeast(0) ?: 0 else 0
         val downSpeed = if (currentState == VpnState.CONNECTED) traffic?.get(3)?.coerceAtLeast(0) ?: 0 else 0
-        binding.todayDownload.text = getString(R.string.traffic_rate_format, formatBytes(downSpeed))
-        binding.todayUpload.text = getString(R.string.traffic_rate_format, formatBytes(upSpeed))
-        binding.todayTotal.text = formatBytes(todayBytesUp + todayBytesDown + liveUp + liveDown)
+        binding.trafficSpeedDown.text = getString(R.string.traffic_download_format, formatBytes(downSpeed))
+        binding.trafficSpeedUp.text = getString(R.string.traffic_upload_format, formatBytes(upSpeed))
+        val sessionTotal = formatBytes(liveUp + liveDown)
+        binding.trafficSessionTotal.text = if (sessionActive && (liveUp > 0 || liveDown > 0)) {
+            getString(R.string.traffic_session_detailed_format, sessionTotal, formatBytes(liveDown), formatBytes(liveUp))
+        } else {
+            getString(R.string.traffic_session_format, sessionTotal)
+        }
         binding.connectionTimer.text = currentSessionStartedAt
             ?.takeIf { sessionActive }
             ?.let { formatDuration(System.currentTimeMillis() - it) }

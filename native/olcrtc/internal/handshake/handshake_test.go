@@ -98,7 +98,6 @@ func TestReplyMustMatchClientChallenge(t *testing.T) {
 	if _, _, matched, err := readReply(&replies, challengeB); err != nil || matched {
 		t.Fatalf("replayed reply = matched %v, err %v; want ignored", matched, err)
 	}
-
 	sessionID, peerID, matched, err := readReply(&replies, challengeB)
 	if err != nil || !matched {
 		t.Fatalf("matching reply = matched %v, err %v", matched, err)
@@ -129,7 +128,7 @@ func TestHandshakeUnexpectedType(t *testing.T) {
 	cConn, sConn := pair(t)
 
 	go func() {
-		_ = writeFrame(cConn, Hello{Version: ProtoVersion, Type: "BOGUS", DeviceID: "dev", Challenge: "00112233445566778899aabbccddeeff"})
+		_ = writeFrame(cConn, Hello{Version: ProtoVersion, Type: "BOGUS", DeviceID: "dev"})
 		_, _ = readFrame(cConn) // drain server's REJECT
 	}()
 

@@ -36,34 +36,4 @@ class RoutingSettingsTest {
             RoutingSettings.VpnIntent(desiredConnected = true, subscriptionProfileId = " ")
         }
     }
-
-    @Test
-    fun parsesAppearancePaletteAndRejectsInvalidGlowIntensity() {
-        assertEquals(RoutingSettings.Appearance.Palette.NEUTRAL, parseAppearancePalette("SAGE"))
-        assertEquals(RoutingSettings.Appearance.Palette.NEUTRAL, parseAppearancePalette("POLAR"))
-        assertEquals(RoutingSettings.Appearance.Palette.BLACK, parseAppearancePalette("BLACK"))
-        assertEquals(RoutingSettings.Appearance.Palette.SYSTEM, parseAppearancePalette("unknown"))
-        assertEquals(RoutingSettings.Appearance.Accent.VIOLET, parseAppearanceAccent("VIOLET"))
-        assertEquals(RoutingSettings.Appearance.Accent.AUTO, parseAppearanceAccent("unknown"))
-        assertThrows(IllegalArgumentException::class.java) {
-            RoutingSettings.Appearance(glowIntensity = 101)
-        }
-    }
-
-    @Test
-    fun keepsPaletteAndAccentIndependentExceptForMonochrome() {
-        val custom = RoutingSettings.Appearance(
-            palette = RoutingSettings.Appearance.Palette.BRONZE,
-            accent = RoutingSettings.Appearance.Accent.ROSE,
-        ).normalized()
-        assertEquals(RoutingSettings.Appearance.Palette.BRONZE, custom.palette)
-        assertEquals(RoutingSettings.Appearance.Accent.ROSE, custom.accent)
-
-        val mono = RoutingSettings.Appearance(
-            palette = RoutingSettings.Appearance.Palette.MONO,
-            accent = RoutingSettings.Appearance.Accent.BLUE,
-        ).normalized()
-        assertEquals(RoutingSettings.Appearance.Palette.MONO, mono.palette)
-        assertEquals(RoutingSettings.Appearance.Accent.AUTO, mono.accent)
-    }
 }

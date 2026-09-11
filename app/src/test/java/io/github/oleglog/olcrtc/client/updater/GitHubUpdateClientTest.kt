@@ -34,7 +34,7 @@ class GitHubUpdateClientTest {
         assertNotNull(result.selectedAsset)
         assertEquals("olcRTC-Client-v1.2.3-universal.apk", result.selectedAsset?.name)
         assertEquals("application/vnd.github+json", connection.requestProperties["Accept"]?.single())
-        assertEquals("olcRTC-Client", connection.requestProperties["User-Agent"]?.single())
+        assertEquals("OLCRTC-Forge", connection.requestProperties["User-Agent"]?.single())
         assertTrue(connection.disconnected)
     }
 

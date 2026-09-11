@@ -15,6 +15,7 @@ data class OlcrtcProfile(
     val vp8Fps: Int = DEFAULT_VP8_FPS,
     val vp8BatchSize: Int = DEFAULT_VP8_BATCH,
     val keepaliveIntervalSeconds: Int = DEFAULT_KEEPALIVE_SECONDS,
+    val authToken: String? = null,
 ) {
     init {
         require(roomId.isNotBlank()) { "roomId is required" }

@@ -14,6 +14,8 @@ keystore.properties
 /app/src/main/jniLibs/
 /app/src/main/obj/
 /app/libs/mobilecore.aar
+/app/libs/mobilecore-sources.jar
+/app/schemas/
 __pycache__/
 *.pyc
 /docs/

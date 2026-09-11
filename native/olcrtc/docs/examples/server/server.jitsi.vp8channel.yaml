@@ -1,0 +1,40 @@
+# Server config: jitsi + vp8channel
+# Run: olcrtc docs/examples/server/server.jitsi.vp8channel.yaml
+
+mode: srv # role: srv (server) or cnc (client)
+
+auth:
+  provider: jitsi # call service provider used for signaling
+
+# For jitsi: full room URL (https://host/room or host/room).
+# Must match the client.
+# Instances: see docs/jitsi.instances.yaml
+# Check in a browser which one works in your network.
+room:
+  id: "https://meet.example.org/REPLACE_WITH_ROOM_NAME" # room name / URL
+
+crypto:
+  # 32 bytes in hex (64 chars). Generate: openssl rand -hex 32
+  # You can use key_file: "./olcrtc.key" to avoid storing the secret here.
+  key: "REPLACE_ME_WITH_64_HEX_CHARS" # must match the client
+
+net:
+  transport: vp8channel # transport to use, e.g. datachannel
+  dns: "8.8.8.8:53" # dns used to resolve names
+
+liveness:
+  interval: 10s # how often to send liveness checks
+  timeout: 15s # wait time for a liveness reply
+  failures: 4 # consecutive failures before the link is considered dead
+
+socks: # upstream socks proxy
+  proxy_addr: "" # e.g. "127.0.0.1"
+  proxy_port: 0 # e.g. 1080
+  proxy_user: "" # optional auth for upstream proxy (RFC 1929)
+  proxy_pass: "" # optional auth for upstream proxy (RFC 1929)
+
+vp8:
+  fps: 30 # frames per second
+  batch_size: 64 # frames encoded per batch
+
+debug: false # log actions in more detail

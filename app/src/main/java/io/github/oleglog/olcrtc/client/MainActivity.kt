@@ -40,7 +40,6 @@ import io.github.oleglog.olcrtc.client.importer.SubscriptionDeepLinkParser
 import io.github.oleglog.olcrtc.client.profiles.ProfilesFragment
 import io.github.oleglog.olcrtc.client.routing.RoutingSettings
 import io.github.oleglog.olcrtc.client.settings.SettingsFragment
-import io.github.oleglog.olcrtc.client.statistics.StatisticsFragment
 import io.github.oleglog.olcrtc.client.subscription.SubscriptionRefresher
 import io.github.oleglog.olcrtc.client.ui.AppearanceTheme
 import io.github.oleglog.olcrtc.client.updater.ApkUpdateInstaller
@@ -81,7 +80,6 @@ class MainActivity : AppCompatActivity() {
     private var lastReconnectAttempt = 0
     private var hasVpnState = false
     private var backgroundEffects = RoutingSettings.BackgroundEffects()
-    private var appearance = RoutingSettings.Appearance()
     private var pendingInstall: PendingInstall? = null
     private var pendingUpdatePrompt: UpdateCheckResult? = null
     private var updateInstallInProgress = false
@@ -165,7 +163,7 @@ class MainActivity : AppCompatActivity() {
         setupMainPager()
         onBackPressedDispatcher.addCallback(this) {
             if (binding.mainPager.currentItem != 0) {
-                binding.mainPager.setCurrentItem(0, appearance.motionEnabled)
+                binding.mainPager.setCurrentItem(0, true)
             } else {
                 isEnabled = false
                 onBackPressedDispatcher.onBackPressed()
@@ -180,21 +178,20 @@ class MainActivity : AppCompatActivity() {
         binding.mainPager.adapter = MainPagerAdapter(this)
         binding.mainPager.offscreenPageLimit = 1
         binding.mainPager.setPageTransformer { page, position ->
-            val distance = if (appearance.motionEnabled) abs(position).coerceIn(0f, 1f) else 0f
+            val distance = abs(position).coerceIn(0f, 1f)
             page.alpha = 1f - distance * 0.12f
             page.scaleY = 1f - distance * 0.015f
         }
         val navigationItems = listOf(
             binding.navigationConnection,
             binding.navigationProfiles,
-            binding.navigationStatistics,
             binding.navigationSettings,
         )
         navigationItems.forEachIndexed { page, item ->
             item.setOnClickListener {
                 item.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 if (binding.mainPager.currentItem != page) {
-                    binding.mainPager.setCurrentItem(page, appearance.motionEnabled)
+                    binding.mainPager.setCurrentItem(page, true)
                 }
             }
         }
@@ -279,19 +276,16 @@ class MainActivity : AppCompatActivity() {
     fun refreshBackgroundEffects() {
         val settings = RoutingSettings.open(applicationContext)
         backgroundEffects = settings.getBackgroundEffects()
-        appearance = settings.getAppearance()
         binding.backgroundEffects.configure(backgroundEffects)
         updateBackgroundEffectsVisibility()
     }
 
     private fun updateBackgroundEffectsVisibility() {
-        val visible = backgroundEffects.enabled && appearance.motionEnabled &&
+        val visible = backgroundEffects.enabled &&
             binding.mainPager.currentItem == 0 && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         binding.backgroundEffects.isVisible = visible
         binding.backgroundEffects.setActive(visible)
     }
-
-    internal fun currentAppearance(): RoutingSettings.Appearance = appearance
 
     private fun showBatteryOptimizationRecommendation(): Boolean {
         val ignoringOptimizations = getSystemService(PowerManager::class.java)
@@ -603,7 +597,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectMainDestination(destinationId: Int, smooth: Boolean) {
         val page = MAIN_DESTINATIONS.indexOf(destinationId)
-        if (page >= 0) binding.mainPager.setCurrentItem(page, smooth && appearance.motionEnabled)
+        if (page >= 0) binding.mainPager.setCurrentItem(page, smooth)
     }
 
     private fun startVpn(profileId: Long) {
@@ -657,7 +651,6 @@ class MainActivity : AppCompatActivity() {
         private val MAIN_DESTINATIONS = intArrayOf(
             R.id.connectionFragment,
             R.id.profilesFragment,
-            R.id.statisticsFragment,
             R.id.settingsFragment,
         )
     }
@@ -673,7 +666,6 @@ class MainActivity : AppCompatActivity() {
         override fun createFragment(position: Int): Fragment = when (position) {
             0 -> ConnectionFragment()
             1 -> ProfilesFragment()
-            2 -> StatisticsFragment()
             else -> SettingsFragment()
         }
     }
