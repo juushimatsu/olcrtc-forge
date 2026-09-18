@@ -1,0 +1,108 @@
+name: Build test APK
+on:
+  push:
+    branches:
+      - codex/olcbox-import-contrast
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore mobilecore build cache
+        id: mobilecore-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/go/bin/gomobile
+            app/libs/mobilecore.aar
+          key: mobilecore-${{ runner.os }}-android-all-${{ hashFiles('scripts/build_mobilecore.sh', 'native/mobilecore/go.mod', 'native/mobilecore/go.sum', 'native/mobilecore/**/*.go', 'native/olcrtc/go.mod', 'native/olcrtc/go.sum', 'native/olcrtc/**/*.go') }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/mobilecore/go.mod
+          cache: true
+          cache-dependency-path: native/mobilecore/go.*
+
+      - name: Restore HEV native cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            app/src/main/jniLibs
+            native/hev-socks5-tunnel/upstream
+          key: hev-${{ runner.os }}-ndk-28.2.13676358-${{ hashFiles('scripts/build_hev.sh', 'app/src/main/jni/**') }}
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+
+      - name: Prepare release signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" || { echo "ANDROID_KEYSTORE_BASE64 secret is required" >&2; exit 1; }
+          test -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" || { echo "ANDROID_KEYSTORE_PASSWORD secret is required" >&2; exit 1; }
+          test -n "${{ secrets.ANDROID_KEY_ALIAS }}" || { echo "ANDROID_KEY_ALIAS secret is required" >&2; exit 1; }
+          test -n "${{ secrets.ANDROID_KEY_PASSWORD }}" || { echo "ANDROID_KEY_PASSWORD secret is required" >&2; exit 1; }
+          mkdir -p keystore
+          printf '%s' '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > keystore/olcrtc-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=keystore/olcrtc-release.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Build native mobilecore
+        run: scripts/build_mobilecore.sh
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          MOBILECORE_TARGET: android
+
+      - name: Verify mobilecore AAR dependency metadata
+        run: scripts/verify_mobilecore_artifact.sh
+
+      - name: Save mobilecore AAR cache
+        if: steps.mobilecore-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/go/bin/gomobile
+            app/libs/mobilecore.aar
+          key: ${{ steps.mobilecore-cache.outputs.cache-primary-key }}
+
+      - name: Build HEV tunnel
+        run: scripts/build_hev.sh
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          HEV_APP_ABI: armeabi-v7a arm64-v8a
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon --build-cache :app:testDebugUnitTest
+
+      - name: Assemble signed release APK
+        run: ./gradlew --no-daemon --build-cache :app:assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: olcrtc-forge-test-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: app/build/reports/tests/
