@@ -1,5 +1,6 @@
 package io.github.oleglog.olcrtc.client.connection
 
+import io.github.oleglog.olcrtc.client.connection.ProfileEditorDialog.compatibleTransports
 import io.github.oleglog.olcrtc.client.data.ProfileConfig
 import io.github.oleglog.olcrtc.client.profile.olcrtc.OlcrtcProfile
 import org.junit.Assert.assertEquals
