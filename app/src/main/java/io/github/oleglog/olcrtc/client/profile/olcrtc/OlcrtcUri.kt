@@ -4,6 +4,7 @@ import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 object OlcrtcUri {
     private val allowedParameters = setOf(
@@ -20,6 +21,11 @@ object OlcrtcUri {
     )
 
     fun parse(raw: String): OlcrtcProfile {
+        val body = raw.substringAfter("://", "")
+        if (raw.startsWith("olcrtc://", ignoreCase = true) &&
+            body.indexOf('?') in 1 until body.indexOf('@')) {
+            return parseOlcbox(raw)
+        }
         val uri = URI(raw)
         require(uri.scheme.equals("olcrtc", ignoreCase = true)) { "Unsupported URI scheme" }
         val authority = uri.rawAuthority?.split('@')?.takeIf { it.size == 2 }
@@ -68,6 +74,36 @@ object OlcrtcUri {
                 "ka",
             ),
             authToken = parameter(params, "auth_token", "auth.token", "a"),
+        )
+    }
+
+    private fun parseOlcbox(raw: String): OlcrtcProfile {
+        require(raw.length <= 16 * 1024 && raw.none { it == '\r' || it == '\n' || it == '\u0000' }) {
+            "Invalid OLCBOX URI"
+        }
+        val match = Regex(
+            "^olcrtc://([^?<>@#\\$]+)\\?([^?<>@#\\$]+)(?:<([^<>]*)>)?@([^?<>@#\\$]+)#([0-9a-fA-F]{64})(?:\\$(.*))?$",
+            RegexOption.IGNORE_CASE,
+        ).matchEntire(raw) ?: throw IllegalArgumentException("Invalid OLCBOX URI")
+        val (providerValue, transportValue, payload, roomId, keyHex, name) = match.destructured
+        val provider = OlcrtcProfile.Provider.parse(providerValue)
+        val transport = OlcrtcProfile.Transport.parse(transportValue)
+        val params = parseQuery(payload)
+        val allowed = if (transport == OlcrtcProfile.Transport.VP8CHANNEL) {
+            setOf("vp8-fps", "vp8-batch")
+        } else emptySet()
+        require((params.keys - allowed).isEmpty()) { "Unsupported OLCBOX transport parameters" }
+        // OLCBOX has no device ID. Keep imports stable when only the display name changes.
+        val identity = "${provider.value}\n$roomId\n${keyHex.lowercase()}"
+        return OlcrtcProfile(
+            name = name,
+            provider = provider,
+            transport = transport,
+            roomId = roomId,
+            clientId = UUID.nameUUIDFromBytes(identity.toByteArray(StandardCharsets.UTF_8)).toString(),
+            keyHex = keyHex,
+            vp8Fps = integer(params, 30, "vp8-fps"),
+            vp8BatchSize = integer(params, 64, "vp8-batch"),
         )
     }
 

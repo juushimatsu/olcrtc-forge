@@ -375,8 +375,8 @@ class ConnectionFragment : Fragment() {
             resolveColor(androidx.appcompat.R.attr.colorPrimary)
         }
         card.strokeWidth = when (state) {
-            ConnectionCardState.CONNECTED -> dimen(R.dimen.card_border_active)
-            ConnectionCardState.SELECTED, ConnectionCardState.INACTIVE -> dimen(R.dimen.card_border)
+            ConnectionCardState.CONNECTED, ConnectionCardState.SELECTED -> dimen(R.dimen.card_border_active)
+            ConnectionCardState.INACTIVE -> dimen(R.dimen.card_border)
         }
         animateCardElevation(card, when (state) {
             ConnectionCardState.CONNECTED -> dimen(R.dimen.card_elevation_connected).toFloat()
@@ -389,8 +389,8 @@ class ConnectionFragment : Fragment() {
                 resolveColor(com.google.android.material.R.attr.colorSurfaceContainer),
                 resolveColor(androidx.appcompat.R.attr.colorPrimary),
                 when (state) {
-                    ConnectionCardState.CONNECTED -> 0.18f
-                    ConnectionCardState.SELECTED -> 0.10f
+                    ConnectionCardState.CONNECTED -> 0.22f
+                    ConnectionCardState.SELECTED -> 0.16f
                     ConnectionCardState.INACTIVE -> 0f
                 },
             ),

@@ -304,6 +304,16 @@
                         android:text="@string/connection_profiles"
                         android:textAppearance="?attr/textAppearanceTitleMedium" />
 
+                    <androidx.appcompat.widget.AppCompatImageButton
+                        android:id="@+id/add_profile"
+                        android:layout_width="@dimen/icon_touch_target"
+                        android:layout_height="@dimen/icon_touch_target"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/add_connection"
+                        android:padding="12dp"
+                        android:src="@drawable/ic_add_24"
+                        app:tint="?attr/colorPrimary" />
+
                     <FrameLayout
                         android:layout_width="@dimen/icon_touch_target"
                         android:layout_height="@dimen/icon_touch_target">
@@ -380,19 +390,6 @@
                             app:indicatorSize="22dp"
                             app:trackThickness="2dp" />
                     </FrameLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/add_profile"
-                        android:layout_width="0dp"
-                        android:layout_height="@dimen/button_secondary_height"
-                        android:layout_weight="1"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:minWidth="0dp"
-                        android:text="@string/add_connection"
-                        app:cornerRadius="@dimen/corner_button"
-                        app:icon="@drawable/ic_add_24"
-                        app:iconGravity="textStart" />
 
                 </LinearLayout>
 

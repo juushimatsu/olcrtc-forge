@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_background">#0B1620</color>
-    <color name="olcrtc_primary">#4F7C8C</color>
+    <color name="olcrtc_primary">#9BCDDD</color>
     <color name="olcrtc_on_primary">#0B1620</color>
     <color name="olcrtc_primary_container">#1E3646</color>
     <color name="olcrtc_on_primary_container">#E8DEC9</color>
-    <color name="olcrtc_secondary">#4F7C8C</color>
+    <color name="olcrtc_secondary">#9BCDDD</color>
     <color name="olcrtc_on_secondary">#0B1620</color>
     <color name="olcrtc_surface">#0B1620</color>
     <color name="olcrtc_surface_container">#1E3646</color>
-    <color name="olcrtc_surface_container_high">#60839E</color>
+    <color name="olcrtc_surface_container_high">#263F50</color>
     <color name="olcrtc_on_surface">#E8DEC9</color>
     <color name="olcrtc_surface_variant">#30485F</color>
     <color name="olcrtc_on_surface_variant">#D5CABE</color>
